@@ -1,0 +1,734 @@
+{
+  "name": "Client Intake Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "intake-automation",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Lead Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "intake-automation"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"bookingLink\": \"https://your-booking-link-here\",\n  \"internalOwnerEmail\": \"owner@yourdomain.com\",\n  \"companyName\": \"Your Company\",\n  \"calendarId\": \"primary\",\n  \"timezone\": \"America/New_York\",\n  \"qualifiedMin\": 7,\n  \"nurtureMin\": 4,\n  \"hubspotPipelineId\": \"\",\n  \"hubspotDealStageId\": \"\",\n  \"enableGoogleSheets\": false,\n  \"googleSheetId\": \"\"\n}",
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize incoming lead data\nconst input = $('Webhook - Lead Intake').first().json;\nconst config = $('Set Config').first().json;\n\n// Normalize email (lowercase, trim)\nconst email = (input.email || '').toLowerCase().trim();\n\n// Split name if only fullName provided\nlet firstName = input.firstName || input.first_name || '';\nlet lastName = input.lastName || input.last_name || '';\n\nif (!firstName && input.name) {\n  const nameParts = input.name.trim().split(' ');\n  firstName = nameParts[0] || '';\n  lastName = nameParts.slice(1).join(' ') || '';\n}\n\nif (!firstName && input.fullName) {\n  const nameParts = input.fullName.trim().split(' ');\n  firstName = nameParts[0] || '';\n  lastName = nameParts.slice(1).join(' ') || '';\n}\n\n// Clean phone number (remove non-digits except +)\nlet phone = (input.phone || input.phoneNumber || input.telephone || '').toString();\nphone = phone.replace(/[^0-9+]/g, '');\n\n// Default timezone if not provided\nconst timezone = input.timezone || config.timezone || 'America/New_York';\n\n// Generate intake ID for idempotency (email + date)\nconst today = new Date().toISOString().split('T')[0];\nconst intakeId = Buffer.from(email + '-' + today).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);\n\n// Extract other fields with fallbacks\nconst company = input.company || input.companyName || input.organization || '';\nconst message = input.message || input.comments || input.notes || input.inquiry || '';\nconst source = input.source || input.utm_source || input.referrer || 'website';\nconst useCase = input.useCase || input.use_case || input.interest || '';\nconst timeline = input.timeline || input.timeframe || input.urgency || '';\nconst budget = input.budget || input.budgetRange || '';\nconst role = input.role || input.jobTitle || input.title || input.position || '';\n\nreturn {\n  json: {\n    // Normalized lead data\n    email,\n    firstName: firstName.trim(),\n    lastName: lastName.trim(),\n    phone,\n    company,\n    message,\n    source,\n    useCase,\n    timeline,\n    budget,\n    role,\n    timezone,\n    intakeId,\n    \n    // Config passthrough\n    config: config,\n    \n    // Metadata\n    receivedAt: new Date().toISOString(),\n    executionId: $execution.id\n  }\n};"
+      },
+      "id": "normalize-data",
+      "name": "Normalize Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "filterGroups": {
+          "filterGroups": [
+            {
+              "filters": [
+                {
+                  "propertyName": "email",
+                  "operator": "EQ",
+                  "value": "={{ $json.email }}"
+                }
+              ]
+            }
+          ]
+        },
+        "additionalFields": {
+          "properties": ["email", "firstname", "lastname", "phone", "company", "intake_status", "intake_score", "intake_id", "followup_count", "last_followup_date"]
+        }
+      },
+      "id": "search-hubspot",
+      "name": "Search HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [660, 300],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "contact-exists",
+              "leftValue": "={{ $json.total }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-contact-exists",
+      "name": "IF Contact Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "contactId": "={{ $('Search HubSpot Contact').first().json.results[0].id }}",
+        "additionalFields": {
+          "phone": "={{ $('Normalize Data').first().json.phone }}",
+          "company": "={{ $('Normalize Data').first().json.company }}",
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "intake_status",
+                "value": "qualifying"
+              },
+              {
+                "property": "intake_id",
+                "value": "={{ $('Normalize Data').first().json.intakeId }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "update-hubspot-contact",
+      "name": "Update HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1100, 180],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "email": "={{ $('Normalize Data').first().json.email }}",
+        "additionalFields": {
+          "firstName": "={{ $('Normalize Data').first().json.firstName }}",
+          "lastName": "={{ $('Normalize Data').first().json.lastName }}",
+          "phone": "={{ $('Normalize Data').first().json.phone }}",
+          "company": "={{ $('Normalize Data').first().json.company }}",
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "intake_status",
+                "value": "qualifying"
+              },
+              {
+                "property": "intake_id",
+                "value": "={{ $('Normalize Data').first().json.intakeId }}"
+              },
+              {
+                "property": "intake_score",
+                "value": "0"
+              },
+              {
+                "property": "followup_count",
+                "value": "0"
+              }
+            ]
+          }
+        }
+      },
+      "id": "create-hubspot-contact",
+      "name": "Create HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1100, 420],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "email",
+              "field2": "email"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "merge-paths",
+      "name": "Merge Contact Paths",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate lead score based on provided data\nconst lead = $('Normalize Data').first().json;\nconst config = lead.config;\n\nlet score = 0;\nlet scoreBreakdown = [];\n\n// 1. Use Case Fit (0-3 points)\nconst useCaseLower = (lead.useCase + ' ' + lead.message).toLowerCase();\nconst perfectMatchKeywords = ['automation', 'integrate', 'integration', 'workflow', 'automate', 'n8n', 'zapier'];\nconst goodMatchKeywords = ['efficiency', 'process', 'streamline', 'optimize', 'save time', 'manual'];\nconst partialMatchKeywords = ['help', 'need', 'looking for', 'interested'];\n\nlet useCaseScore = 0;\nif (perfectMatchKeywords.some(kw => useCaseLower.includes(kw))) {\n  useCaseScore = 3;\n  scoreBreakdown.push('Use case: Perfect match (3)');\n} else if (goodMatchKeywords.some(kw => useCaseLower.includes(kw))) {\n  useCaseScore = 2;\n  scoreBreakdown.push('Use case: Good match (2)');\n} else if (partialMatchKeywords.some(kw => useCaseLower.includes(kw))) {\n  useCaseScore = 1;\n  scoreBreakdown.push('Use case: Partial match (1)');\n} else {\n  scoreBreakdown.push('Use case: No match (0)');\n}\nscore += useCaseScore;\n\n// 2. Timeline Urgency (0-2 points)\nconst timelineLower = lead.timeline.toLowerCase();\nconst urgentKeywords = ['immediately', 'asap', 'urgent', 'this week', 'now', 'today'];\nconst soonKeywords = ['this month', 'this quarter', 'soon', 'next month'];\n\nlet timelineScore = 0;\nif (urgentKeywords.some(kw => timelineLower.includes(kw))) {\n  timelineScore = 2;\n  scoreBreakdown.push('Timeline: Urgent (2)');\n} else if (soonKeywords.some(kw => timelineLower.includes(kw))) {\n  timelineScore = 1;\n  scoreBreakdown.push('Timeline: Soon (1)');\n} else {\n  scoreBreakdown.push('Timeline: Not urgent (0)');\n}\nscore += timelineScore;\n\n// 3. Budget Signal (0-2 points)\nlet budgetScore = 0;\nconst budgetStr = lead.budget.toString().toLowerCase();\nconst budgetNum = parseInt(budgetStr.replace(/[^0-9]/g, '')) || 0;\n\nif (budgetNum >= 5000 || budgetStr.includes('10k') || budgetStr.includes('10,000')) {\n  budgetScore = 2;\n  scoreBreakdown.push('Budget: High (2)');\n} else if (budgetNum >= 1000 || budgetStr.includes('1k') || budgetStr.includes('1,000')) {\n  budgetScore = 1;\n  scoreBreakdown.push('Budget: Medium (1)');\n} else if (budgetStr.length > 0) {\n  budgetScore = 0;\n  scoreBreakdown.push('Budget: Low (0)');\n} else {\n  scoreBreakdown.push('Budget: Not provided (0)');\n}\nscore += budgetScore;\n\n// 4. Role/Seniority (0-2 points)\nconst roleLower = lead.role.toLowerCase();\nconst seniorKeywords = ['owner', 'ceo', 'cto', 'coo', 'cfo', 'founder', 'director', 'vp', 'vice president', 'head of', 'chief'];\nconst midKeywords = ['manager', 'lead', 'senior', 'supervisor', 'team lead'];\n\nlet roleScore = 0;\nif (seniorKeywords.some(kw => roleLower.includes(kw))) {\n  roleScore = 2;\n  scoreBreakdown.push('Role: Senior (2)');\n} else if (midKeywords.some(kw => roleLower.includes(kw))) {\n  roleScore = 1;\n  scoreBreakdown.push('Role: Mid-level (1)');\n} else if (lead.role.length > 0) {\n  roleScore = 0;\n  scoreBreakdown.push('Role: Other (0)');\n} else {\n  scoreBreakdown.push('Role: Not provided (0)');\n}\nscore += roleScore;\n\n// 5. Data Completeness (0-1 point)\nlet completenessScore = 0;\nif (lead.phone && lead.phone.length >= 10) {\n  completenessScore = 1;\n  scoreBreakdown.push('Phone provided (1)');\n} else {\n  scoreBreakdown.push('Phone not provided (0)');\n}\nscore += completenessScore;\n\n// Determine routing\nlet route = 'disqualified';\nlet status = 'disqualified';\n\nif (score >= config.qualifiedMin) {\n  route = 'qualified';\n  status = 'qualified';\n} else if (score >= config.nurtureMin) {\n  route = 'nurture';\n  status = 'nurture';\n}\n\nconst rationale = scoreBreakdown.join(' | ');\n\nreturn {\n  json: {\n    ...lead,\n    score,\n    route,\n    status,\n    rationale,\n    scoreBreakdown\n  }\n};"
+      },
+      "id": "calculate-score",
+      "name": "Calculate Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "qualified",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "qualified"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "nurture",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "nurture"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "disqualified",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "disqualified"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "switch-by-score",
+      "name": "Route by Score",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Thanks for reaching out, {{ $json.firstName || 'there' }}",
+        "emailType": "html",
+        "message": "=<p>Hi {{ $json.firstName || 'there' }},</p>\n\n<p>Thank you for contacting us. I received your message and wanted to reach out personally.</p>\n\n<p>Based on what you shared, it sounds like we could be a great fit to help you{{ $json.useCase ? ' with ' + $json.useCase : '' }}.</p>\n\n<p>I would love to learn more about your goals. Pick a time that works for you:</p>\n\n<p><strong><a href=\"{{ $json.config.bookingLink }}\">Book Your Consultation</a></strong></p>\n\n<p>The call takes about 15-20 minutes. We will cover your current situation, goals, and whether our approach makes sense for you.</p>\n\n<p>If you prefer, just reply with 2-3 times that work for you and I will confirm one.</p>\n\n<p>Talk soon,<br>\n{{ $json.config.companyName }} Team</p>",
+        "options": {}
+      },
+      "id": "send-qualified-email",
+      "name": "Send Qualified Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2000, 120],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Google OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Thanks for reaching out, {{ $json.firstName || 'there' }}",
+        "emailType": "html",
+        "message": "=<p>Hi {{ $json.firstName || 'there' }},</p>\n\n<p>Thank you for your interest in {{ $json.config.companyName }}.</p>\n\n<p>To make sure we can help you effectively, I have a few quick questions:</p>\n\n<ol>\n<li>What is the main challenge you are trying to solve?</li>\n<li>What does your timeline look like for getting started?</li>\n<li>Have you set aside a budget for this project?</li>\n<li>What is your role at {{ $json.company || 'your company' }}?</li>\n</ol>\n\n<p>You can reply to this email with your answers, or if you would like to chat directly:</p>\n\n<p><a href=\"{{ $json.config.bookingLink }}\">Book a 15-minute call</a></p>\n\n<p>Here are some resources that might help in the meantime:</p>\n<ul>\n<li>Learn more about our approach on our website</li>\n<li>Check out case studies from similar companies</li>\n</ul>\n\n<p>Looking forward to connecting.</p>\n\n<p>Best regards,<br>\n{{ $json.config.companyName }} Team</p>",
+        "options": {}
+      },
+      "id": "send-nurture-email",
+      "name": "Send Nurture Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2000, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Google OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Thanks for your interest, {{ $json.firstName || 'there' }}",
+        "emailType": "html",
+        "message": "=<p>Hi {{ $json.firstName || 'there' }},</p>\n\n<p>Thank you for reaching out to {{ $json.config.companyName }}.</p>\n\n<p>After reviewing your inquiry, it looks like we might not be the best fit for what you need right now. We specialize in workflow automation and integration solutions for established businesses.</p>\n\n<p>Here are some resources that might help:</p>\n<ul>\n<li>Check out free automation templates online</li>\n<li>Explore n8n's community workflows</li>\n<li>Consider starting with simpler tools like Zapier for basic needs</li>\n</ul>\n\n<p>If your situation changes in the future, feel free to reach back out.</p>\n\n<p>Wishing you the best,<br>\n{{ $json.config.companyName }} Team</p>",
+        "options": {}
+      },
+      "id": "send-disqualified-email",
+      "name": "Send Disqualified Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2000, 480],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Google OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.config.internalOwnerEmail }}",
+        "subject": "=[Qualified Lead] {{ $json.firstName }} {{ $json.lastName }} - Score: {{ $json.score }}",
+        "emailType": "html",
+        "message": "=<h2>New Qualified Lead</h2>\n\n<p><strong>Score:</strong> {{ $json.score }}/10</p>\n<p><strong>Status:</strong> {{ $json.status }}</p>\n\n<h3>Lead Details</h3>\n<ul>\n<li><strong>Name:</strong> {{ $json.firstName }} {{ $json.lastName }}</li>\n<li><strong>Email:</strong> {{ $json.email }}</li>\n<li><strong>Phone:</strong> {{ $json.phone || 'Not provided' }}</li>\n<li><strong>Company:</strong> {{ $json.company || 'Not provided' }}</li>\n<li><strong>Role:</strong> {{ $json.role || 'Not provided' }}</li>\n</ul>\n\n<h3>Inquiry</h3>\n<p><strong>Use Case:</strong> {{ $json.useCase || 'Not specified' }}</p>\n<p><strong>Timeline:</strong> {{ $json.timeline || 'Not specified' }}</p>\n<p><strong>Budget:</strong> {{ $json.budget || 'Not specified' }}</p>\n<p><strong>Message:</strong> {{ $json.message || 'None' }}</p>\n\n<h3>Score Breakdown</h3>\n<p>{{ $json.rationale }}</p>\n\n<h3>Actions</h3>\n<p>The lead has been sent a booking link. Wait for them to schedule or follow up manually if needed.</p>\n\n<p><small>Source: {{ $json.source }} | Received: {{ $json.receivedAt }}</small></p>",
+        "options": {}
+      },
+      "id": "notify-owner-qualified",
+      "name": "Notify Owner - Qualified",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2220, 120],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Google OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "email",
+              "field2": "email"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "merge-emails",
+      "name": "Merge After Emails",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "contactId": "={{ $('Create HubSpot Contact').first().json.id || $('Update HubSpot Contact').first().json.id || $('Search HubSpot Contact').first().json.results[0].id }}",
+        "additionalFields": {
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "intake_status",
+                "value": "={{ $('Calculate Score').first().json.status }}"
+              },
+              {
+                "property": "intake_score",
+                "value": "={{ $('Calculate Score').first().json.score }}"
+              },
+              {
+                "property": "followup_count",
+                "value": "0"
+              },
+              {
+                "property": "last_followup_date",
+                "value": "={{ new Date().toISOString().split('T')[0] }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "update-hubspot-score",
+      "name": "Update HubSpot Score",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [2660, 300],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "engagement",
+        "operation": "create",
+        "type": "NOTE",
+        "metadata": {
+          "body": "=## Intake Automation Note\n\n**Score:** {{ $('Calculate Score').first().json.score }}/10\n**Status:** {{ $('Calculate Score').first().json.status }}\n**Intake ID:** {{ $('Normalize Data').first().json.intakeId }}\n\n### Score Breakdown\n{{ $('Calculate Score').first().json.rationale }}\n\n### Lead Details\n- **Source:** {{ $('Normalize Data').first().json.source }}\n- **Use Case:** {{ $('Normalize Data').first().json.useCase || 'Not specified' }}\n- **Timeline:** {{ $('Normalize Data').first().json.timeline || 'Not specified' }}\n- **Budget:** {{ $('Normalize Data').first().json.budget || 'Not specified' }}\n\n### Message\n{{ $('Normalize Data').first().json.message || 'No message provided' }}\n\n---\n*Processed by n8n Client Intake Automation*\n*Execution ID: {{ $execution.id }}*"
+        },
+        "additionalFields": {
+          "associations": {
+            "contactIds": "={{ [$('Create HubSpot Contact').first().json.id || $('Update HubSpot Contact').first().json.id || $('Search HubSpot Contact').first().json.results[0].id] }}"
+          }
+        }
+      },
+      "id": "create-hubspot-note",
+      "name": "Create HubSpot Note",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [2880, 300],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Final summary\nconst lead = $('Calculate Score').first().json;\n\nreturn {\n  json: {\n    success: true,\n    email: lead.email,\n    firstName: lead.firstName,\n    lastName: lead.lastName,\n    score: lead.score,\n    status: lead.status,\n    intakeId: lead.intakeId,\n    processedAt: new Date().toISOString(),\n    executionId: $execution.id\n  }\n};"
+      },
+      "id": "final-output",
+      "name": "Success Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3100, 300]
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ $json.error.message || 'Unknown error in intake workflow' }}"
+      },
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 600]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.internalOwnerEmail || 'owner@yourdomain.com' }}",
+        "subject": "=[Intake Error] Workflow failed",
+        "emailType": "html",
+        "message": "=<h2>Intake Automation Error</h2>\n\n<p>The intake automation workflow encountered an error.</p>\n\n<h3>Error Details</h3>\n<p><strong>Message:</strong> {{ $json.error.message || 'Unknown error' }}</p>\n<p><strong>Node:</strong> {{ $json.error.node || 'Unknown' }}</p>\n<p><strong>Time:</strong> {{ new Date().toISOString() }}</p>\n\n<h3>Execution Link</h3>\n<p>Review the full execution in n8n to see what went wrong.</p>\n<p>Execution ID: {{ $execution.id }}</p>\n\n<h3>Input Data</h3>\n<pre>{{ JSON.stringify($json.execution?.data || {}, null, 2) }}</pre>\n\n<hr>\n<p><small>This is an automated error notification from your n8n Client Intake Automation.</small></p>",
+        "options": {}
+      },
+      "id": "send-error-alert",
+      "name": "Send Error Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [220, 600],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Google OAuth2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook - Lead Intake": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Normalize Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Data": {
+      "main": [
+        [
+          {
+            "node": "Search HubSpot Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search HubSpot Contact": {
+      "main": [
+        [
+          {
+            "node": "IF Contact Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Contact Exists": {
+      "main": [
+        [
+          {
+            "node": "Update HubSpot Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create HubSpot Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update HubSpot Contact": {
+      "main": [
+        [
+          {
+            "node": "Merge Contact Paths",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create HubSpot Contact": {
+      "main": [
+        [
+          {
+            "node": "Merge Contact Paths",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Contact Paths": {
+      "main": [
+        [
+          {
+            "node": "Calculate Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Score": {
+      "main": [
+        [
+          {
+            "node": "Route by Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Score": {
+      "main": [
+        [
+          {
+            "node": "Send Qualified Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Nurture Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Disqualified Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Qualified Email": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner - Qualified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner - Qualified": {
+      "main": [
+        [
+          {
+            "node": "Merge After Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Nurture Email": {
+      "main": [
+        [
+          {
+            "node": "Merge After Emails",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Send Disqualified Email": {
+      "main": [
+        [
+          {
+            "node": "Merge After Emails",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge After Emails": {
+      "main": [
+        [
+          {
+            "node": "Update HubSpot Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update HubSpot Score": {
+      "main": [
+        [
+          {
+            "node": "Create HubSpot Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create HubSpot Note": {
+      "main": [
+        [
+          {
+            "node": "Success Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "client-intake-automation"
+  },
+  "tags": [
+    {
+      "name": "intake",
+      "id": "1"
+    },
+    {
+      "name": "lead-management",
+      "id": "2"
+    }
+  ]
+}

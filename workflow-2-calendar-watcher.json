@@ -1,0 +1,1018 @@
+{
+  "name": "Calendar Watcher and Follow-ups",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 10 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"bookingLink\": \"https://your-booking-link-here\",\n  \"internalOwnerEmail\": \"owner@yourdomain.com\",\n  \"companyName\": \"Your Company\",\n  \"calendarId\": \"primary\",\n  \"timezone\": \"America/New_York\",\n  \"followup1Hours\": 4,\n  \"followup2Hours\": 24,\n  \"followup3Hours\": 72,\n  \"staleHours\": 168\n}",
+        "options": {}
+      },
+      "id": "set-config-watcher",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {},
+      "id": "split-paths",
+      "name": "Split: Calendar and Follow-ups",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": "={{ $('Set Config').first().json.calendarId }}",
+        "returnAll": false,
+        "limit": 50,
+        "options": {
+          "timeMin": "={{ new Date(Date.now() - 30 * 60 * 1000).toISOString() }}",
+          "timeMax": "={{ new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }}",
+          "singleEvents": true
+        }
+      },
+      "id": "get-calendar-events",
+      "name": "Get Recent Calendar Events",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [660, 180],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "gcal-cred",
+          "name": "Google OAuth2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter for new bookings and extract attendee emails\nconst events = $input.all();\nconst config = $('Set Config').first().json;\nconst newBookings = [];\n\nfor (const item of events) {\n  const event = item.json;\n  \n  // Skip if no attendees\n  if (!event.attendees || event.attendees.length === 0) continue;\n  \n  // Skip if event was created more than 30 minutes ago (already processed)\n  const createdTime = new Date(event.created);\n  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);\n  if (createdTime < thirtyMinutesAgo) continue;\n  \n  // Extract attendee emails (excluding the calendar owner)\n  for (const attendee of event.attendees) {\n    if (attendee.self) continue; // Skip the organizer\n    \n    newBookings.push({\n      eventId: event.id,\n      eventTitle: event.summary || 'Meeting',\n      eventStart: event.start?.dateTime || event.start?.date,\n      eventEnd: event.end?.dateTime || event.end?.date,\n      attendeeEmail: attendee.email.toLowerCase(),\n      attendeeName: attendee.displayName || '',\n      attendeeStatus: attendee.responseStatus,\n      createdAt: event.created\n    });\n  }\n}\n\nif (newBookings.length === 0) {\n  return [{ json: { noNewBookings: true } }];\n}\n\nreturn newBookings.map(b => ({ json: b }));"
+      },
+      "id": "filter-new-bookings",
+      "name": "Filter New Bookings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-bookings",
+              "leftValue": "={{ $json.noNewBookings }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notTrue"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-has-bookings",
+      "name": "IF Has New Bookings",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1100, 180]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "filterGroups": {
+          "filterGroups": [
+            {
+              "filters": [
+                {
+                  "propertyName": "email",
+                  "operator": "EQ",
+                  "value": "={{ $json.attendeeEmail }}"
+                }
+              ]
+            }
+          ]
+        },
+        "additionalFields": {
+          "properties": ["email", "firstname", "lastname", "intake_status", "intake_score", "company"]
+        }
+      },
+      "id": "search-contact-by-booking",
+      "name": "Find HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1320, 80],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "contact-found",
+              "leftValue": "={{ $json.total }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-contact-found",
+      "name": "IF Contact Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1540, 80]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "contactId": "={{ $json.results[0].id }}",
+        "additionalFields": {
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "intake_status",
+                "value": "booked"
+              }
+            ]
+          }
+        }
+      },
+      "id": "update-status-booked",
+      "name": "Mark as Booked",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1760, 0],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "engagement",
+        "operation": "create",
+        "type": "NOTE",
+        "metadata": {
+          "body": "=## Meeting Booked\n\n**Event:** {{ $('Filter New Bookings').item.json.eventTitle }}\n**Date/Time:** {{ $('Filter New Bookings').item.json.eventStart }}\n**Status:** booked\n\n*Updated automatically by Calendar Watcher*"
+        },
+        "additionalFields": {
+          "associations": {
+            "contactIds": "={{ [$('Find HubSpot Contact').item.json.results[0].id] }}"
+          }
+        }
+      },
+      "id": "create-booking-note",
+      "name": "Add Booking Note",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1980, 0],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.internalOwnerEmail }}",
+        "subject": "=[Meeting Booked] {{ $('Find HubSpot Contact').item.json.results[0].properties.firstname || '' }} {{ $('Find HubSpot Contact').item.json.results[0].properties.lastname || '' }}",
+        "emailType": "html",
+        "message": "=<h2>Meeting Booked!</h2>\n\n<p>A lead has booked a consultation.</p>\n\n<h3>Lead Details</h3>\n<ul>\n<li><strong>Name:</strong> {{ $('Find HubSpot Contact').item.json.results[0].properties.firstname || '' }} {{ $('Find HubSpot Contact').item.json.results[0].properties.lastname || '' }}</li>\n<li><strong>Email:</strong> {{ $('Filter New Bookings').item.json.attendeeEmail }}</li>\n<li><strong>Company:</strong> {{ $('Find HubSpot Contact').item.json.results[0].properties.company || 'Not specified' }}</li>\n<li><strong>Score:</strong> {{ $('Find HubSpot Contact').item.json.results[0].properties.intake_score || 'N/A' }}</li>\n</ul>\n\n<h3>Meeting Details</h3>\n<ul>\n<li><strong>Event:</strong> {{ $('Filter New Bookings').item.json.eventTitle }}</li>\n<li><strong>Time:</strong> {{ $('Filter New Bookings').item.json.eventStart }}</li>\n</ul>\n\n<p>HubSpot status has been updated to \"booked\" and follow-ups have stopped.</p>",
+        "options": {}
+      },
+      "id": "notify-owner-booking",
+      "name": "Notify Owner - Booking",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2200, 0],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Google OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "filterGroups": {
+          "filterGroups": [
+            {
+              "filters": [
+                {
+                  "propertyName": "intake_status",
+                  "operator": "EQ",
+                  "value": "qualified"
+                }
+              ]
+            },
+            {
+              "filters": [
+                {
+                  "propertyName": "intake_status",
+                  "operator": "EQ",
+                  "value": "nurture"
+                }
+              ]
+            }
+          ]
+        },
+        "additionalFields": {
+          "properties": ["email", "firstname", "lastname", "company", "intake_status", "intake_score", "followup_count", "last_followup_date", "intake_id"]
+        }
+      },
+      "id": "get-pending-followups",
+      "name": "Get Leads Needing Follow-up",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [660, 420],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check which leads need follow-ups based on timing\nconst results = $input.first().json.results || [];\nconst config = $('Set Config').first().json;\nconst now = Date.now();\n\nconst leadsToFollowUp = [];\nconst staleLeads = [];\n\nfor (const contact of results) {\n  const props = contact.properties || {};\n  const email = props.email;\n  const firstName = props.firstname || '';\n  const lastName = props.lastname || '';\n  const company = props.company || '';\n  const status = props.intake_status || 'new';\n  const score = parseInt(props.intake_score) || 0;\n  const followupCount = parseInt(props.followup_count) || 0;\n  const lastFollowupStr = props.last_followup_date;\n  \n  // Skip if already booked, disqualified, or stale\n  if (['booked', 'disqualified', 'stale'].includes(status)) continue;\n  \n  // Parse last followup date\n  let lastFollowup = lastFollowupStr ? new Date(lastFollowupStr).getTime() : (new Date(contact.createdAt)).getTime();\n  const hoursSinceLastContact = (now - lastFollowup) / (1000 * 60 * 60);\n  \n  // Determine if follow-up is due\n  let followUpNumber = null;\n  \n  if (followupCount === 0 && hoursSinceLastContact >= config.followup1Hours) {\n    followUpNumber = 1;\n  } else if (followupCount === 1 && hoursSinceLastContact >= (config.followup2Hours - config.followup1Hours)) {\n    followUpNumber = 2;\n  } else if (followupCount === 2 && hoursSinceLastContact >= (config.followup3Hours - config.followup2Hours)) {\n    followUpNumber = 3;\n  } else if (followupCount >= 3 && hoursSinceLastContact >= (config.staleHours - config.followup3Hours)) {\n    // Mark as stale\n    staleLeads.push({\n      contactId: contact.id,\n      email,\n      firstName,\n      lastName,\n      company,\n      score,\n      status: 'stale'\n    });\n    continue;\n  }\n  \n  if (followUpNumber !== null) {\n    leadsToFollowUp.push({\n      contactId: contact.id,\n      email,\n      firstName,\n      lastName,\n      company,\n      status,\n      score,\n      followupCount,\n      followUpNumber,\n      hoursSinceLastContact: Math.round(hoursSinceLastContact)\n    });\n  }\n}\n\n// Return combined results\nconst allResults = [\n  ...leadsToFollowUp.map(l => ({ json: { ...l, action: 'followup' } })),\n  ...staleLeads.map(l => ({ json: { ...l, action: 'stale' } }))\n];\n\nif (allResults.length === 0) {\n  return [{ json: { noFollowupsNeeded: true } }];\n}\n\nreturn allResults;"
+      },
+      "id": "check-followup-timing",
+      "name": "Check Follow-up Timing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 420]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "needs-action",
+              "leftValue": "={{ $json.noFollowupsNeeded }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notTrue"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-needs-followup",
+      "name": "IF Needs Action",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1100, 420]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "followup",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "followup"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "stale",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "stale"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "switch-action",
+      "name": "Route by Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1320, 420]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.followUpNumber }}",
+                    "rightValue": 1,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "followup1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.followUpNumber }}",
+                    "rightValue": 2,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "followup2"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.followUpNumber }}",
+                    "rightValue": 3,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "followup3"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "switch-followup-number",
+      "name": "Route by Follow-up #",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1540, 340]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Quick follow-up, {{ $json.firstName || 'there' }}",
+        "emailType": "html",
+        "message": "=<p>Hi {{ $json.firstName || 'there' }},</p>\n\n<p>Just following up on my earlier email. I know things get busy.</p>\n\n<p>If you have a moment, I would love to hear back, or feel free to grab a time on my calendar:</p>\n\n<p><a href=\"{{ $('Set Config').first().json.bookingLink }}\">Book a Call</a></p>\n\n<p>Let me know if you have any questions.</p>\n\n<p>Best,<br>\n{{ $('Set Config').first().json.companyName }} Team</p>",
+        "options": {}
+      },
+      "id": "send-followup-1",
+      "name": "Send Follow-up 1 (4h)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1760, 240],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Google OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Still interested, {{ $json.firstName || 'there' }}?",
+        "emailType": "html",
+        "message": "=<p>Hi {{ $json.firstName || 'there' }},</p>\n\n<p>I wanted to check in one more time. I sent over some information yesterday and wanted to make sure my email did not get buried.</p>\n\n<p>If you are still interested in discussing how we can help, I am happy to chat. Just reply to this email or book a time here:</p>\n\n<p><a href=\"{{ $('Set Config').first().json.bookingLink }}\">Book a Call</a></p>\n\n<p>If now is not the right time, no worries at all. Just let me know and I will follow up later.</p>\n\n<p>Best,<br>\n{{ $('Set Config').first().json.companyName }} Team</p>",
+        "options": {}
+      },
+      "id": "send-followup-2",
+      "name": "Send Follow-up 2 (24h)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1760, 360],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Google OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Last chance to connect, {{ $json.firstName || 'there' }}",
+        "emailType": "html",
+        "message": "=<p>Hi {{ $json.firstName || 'there' }},</p>\n\n<p>I have reached out a few times and have not heard back, so I wanted to send one final note.</p>\n\n<p>If you are still interested in exploring how we can help {{ $json.company ? $json.company : 'you' }}, I am here. If not, I completely understand and will close out your inquiry.</p>\n\n<p>You can still book a time here if you would like to connect:</p>\n\n<p><a href=\"{{ $('Set Config').first().json.bookingLink }}\">Book a Call</a></p>\n\n<p>Either way, feel free to reach out anytime in the future.</p>\n\n<p>Best,<br>\n{{ $('Set Config').first().json.companyName }} Team</p>",
+        "options": {}
+      },
+      "id": "send-followup-3",
+      "name": "Send Follow-up 3 (3d)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1760, 480],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Google OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "email",
+              "field2": "email"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "merge-followups",
+      "name": "Merge Follow-ups",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1980, 360]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "contactId": "={{ $json.contactId }}",
+        "additionalFields": {
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "followup_count",
+                "value": "={{ $json.followUpNumber }}"
+              },
+              {
+                "property": "last_followup_date",
+                "value": "={{ new Date().toISOString().split('T')[0] }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "update-followup-count",
+      "name": "Update Follow-up Count",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [2200, 360],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "contactId": "={{ $json.contactId }}",
+        "additionalFields": {
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "intake_status",
+                "value": "stale"
+              }
+            ]
+          }
+        }
+      },
+      "id": "mark-as-stale",
+      "name": "Mark as Stale",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1540, 560],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.internalOwnerEmail }}",
+        "subject": "=[Lead Stale] {{ $json.firstName }} {{ $json.lastName }} - No response after 7 days",
+        "emailType": "html",
+        "message": "=<h2>Lead Went Stale</h2>\n\n<p>A lead has not responded or booked after 7 days of follow-ups.</p>\n\n<h3>Lead Details</h3>\n<ul>\n<li><strong>Name:</strong> {{ $json.firstName }} {{ $json.lastName }}</li>\n<li><strong>Email:</strong> {{ $json.email }}</li>\n<li><strong>Company:</strong> {{ $json.company || 'Not specified' }}</li>\n<li><strong>Score:</strong> {{ $json.score }}</li>\n</ul>\n\n<h3>Action Needed</h3>\n<p>Review this lead and decide whether to:</p>\n<ul>\n<li>Manually follow up with a phone call</li>\n<li>Add to a long-term nurture sequence</li>\n<li>Close as lost</li>\n</ul>\n\n<p>The lead's status in HubSpot has been set to \"stale\" and automated follow-ups have stopped.</p>",
+        "options": {}
+      },
+      "id": "notify-owner-stale",
+      "name": "Notify Owner - Stale",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1760, 560],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Google OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "engagement",
+        "operation": "create",
+        "type": "NOTE",
+        "metadata": {
+          "body": "=## Lead Marked Stale\n\nNo response after 7 days and multiple follow-ups.\nInternal owner notified.\n\n*Updated automatically by Calendar Watcher*"
+        },
+        "additionalFields": {
+          "associations": {
+            "contactIds": "={{ [$json.contactId] }}"
+          }
+        }
+      },
+      "id": "create-stale-note",
+      "name": "Add Stale Note",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1980, 560],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "hubspot-cred",
+          "name": "HubSpot Private App"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "id": "end-no-action",
+      "name": "End - No Action Needed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1320, 560]
+    },
+    {
+      "parameters": {},
+      "id": "end-booking-branch",
+      "name": "End - Booking Processed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2420, 0]
+    },
+    {
+      "parameters": {},
+      "id": "end-contact-not-found",
+      "name": "End - Contact Not Found",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1760, 160]
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ $json.error.message || 'Unknown error in calendar watcher' }}"
+      },
+      "id": "error-trigger-watcher",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 700]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.internalOwnerEmail || 'owner@yourdomain.com' }}",
+        "subject": "=[Watcher Error] Calendar/Follow-up workflow failed",
+        "emailType": "html",
+        "message": "=<h2>Calendar Watcher Error</h2>\n\n<p>The Calendar Watcher and Follow-ups workflow encountered an error.</p>\n\n<h3>Error Details</h3>\n<p><strong>Message:</strong> {{ $json.error.message || 'Unknown error' }}</p>\n<p><strong>Node:</strong> {{ $json.error.node || 'Unknown' }}</p>\n<p><strong>Time:</strong> {{ new Date().toISOString() }}</p>\n\n<p>Please check your n8n instance for details.</p>\n<p>Execution ID: {{ $execution.id }}</p>",
+        "options": {}
+      },
+      "id": "send-watcher-error",
+      "name": "Send Error Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [220, 700],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Google OAuth2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Every 10 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Split: Calendar and Follow-ups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split: Calendar and Follow-ups": {
+      "main": [
+        [
+          {
+            "node": "Get Recent Calendar Events",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Leads Needing Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recent Calendar Events": {
+      "main": [
+        [
+          {
+            "node": "Filter New Bookings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter New Bookings": {
+      "main": [
+        [
+          {
+            "node": "IF Has New Bookings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has New Bookings": {
+      "main": [
+        [
+          {
+            "node": "Find HubSpot Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Find HubSpot Contact": {
+      "main": [
+        [
+          {
+            "node": "IF Contact Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Contact Found": {
+      "main": [
+        [
+          {
+            "node": "Mark as Booked",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "End - Contact Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Booked": {
+      "main": [
+        [
+          {
+            "node": "Add Booking Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Booking Note": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner - Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner - Booking": {
+      "main": [
+        [
+          {
+            "node": "End - Booking Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Leads Needing Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Check Follow-up Timing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Follow-up Timing": {
+      "main": [
+        [
+          {
+            "node": "IF Needs Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Needs Action": {
+      "main": [
+        [
+          {
+            "node": "Route by Action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "End - No Action Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Action": {
+      "main": [
+        [
+          {
+            "node": "Route by Follow-up #",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark as Stale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Follow-up #": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-up 1 (4h)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Follow-up 2 (24h)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Follow-up 3 (3d)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up 1 (4h)": {
+      "main": [
+        [
+          {
+            "node": "Merge Follow-ups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up 2 (24h)": {
+      "main": [
+        [
+          {
+            "node": "Merge Follow-ups",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Send Follow-up 3 (3d)": {
+      "main": [
+        [
+          {
+            "node": "Merge Follow-ups",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Follow-ups": {
+      "main": [
+        [
+          {
+            "node": "Update Follow-up Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Stale": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner - Stale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner - Stale": {
+      "main": [
+        [
+          {
+            "node": "Add Stale Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "calendar-watcher-followups"
+  },
+  "tags": [
+    {
+      "name": "intake",
+      "id": "1"
+    },
+    {
+      "name": "follow-up",
+      "id": "3"
+    }
+  ]
+}

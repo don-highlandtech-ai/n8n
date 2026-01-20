@@ -1,0 +1,119 @@
+{
+  "_description": "Sample test payloads for Client Intake Automation. Use these to test your workflow.",
+
+  "test_qualified_lead": {
+    "_comment": "This lead should score 8+ and route to 'qualified'. Use this to test the happy path.",
+    "email": "sarah.director@bigcorp.com",
+    "firstName": "Sarah",
+    "lastName": "Director",
+    "phone": "555-987-6543",
+    "company": "Big Corp Industries",
+    "message": "We need to automate our lead intake process. Currently spending 15 hours per week on manual data entry. Looking for a solution that integrates with our HubSpot CRM.",
+    "source": "website",
+    "useCase": "workflow automation and CRM integration",
+    "timeline": "this week - urgent",
+    "budget": "15000",
+    "role": "Director of Operations"
+  },
+
+  "test_nurture_lead": {
+    "_comment": "This lead should score 4-6 and route to 'nurture'. Use this to test the nurture path.",
+    "email": "mike.manager@mediumco.com",
+    "firstName": "Mike",
+    "lastName": "Manager",
+    "phone": "",
+    "company": "Medium Co LLC",
+    "message": "Exploring options for process improvement",
+    "source": "linkedin",
+    "useCase": "maybe automation",
+    "timeline": "next quarter",
+    "budget": "2000",
+    "role": "Project Manager"
+  },
+
+  "test_disqualified_lead": {
+    "_comment": "This lead should score 0-3 and route to 'disqualified'. Use this to test the disqualified path.",
+    "email": "pat.curious@unknown.com",
+    "firstName": "Pat",
+    "lastName": "",
+    "phone": "",
+    "company": "",
+    "message": "Just curious about what you do",
+    "source": "google",
+    "useCase": "",
+    "timeline": "",
+    "budget": "",
+    "role": ""
+  },
+
+  "test_minimal_lead": {
+    "_comment": "Minimal data - only email. Tests data normalization and handling of missing fields.",
+    "email": "minimal@test.com"
+  },
+
+  "test_full_name_only": {
+    "_comment": "Tests name splitting when only fullName is provided.",
+    "email": "john.smith@example.com",
+    "name": "John Alexander Smith",
+    "phone": "(555) 123-4567",
+    "company": "Smith Enterprises",
+    "message": "Interested in automation services"
+  },
+
+  "test_messy_phone": {
+    "_comment": "Tests phone number cleaning with various formats.",
+    "email": "messy.phone@test.com",
+    "firstName": "Alex",
+    "lastName": "Test",
+    "phone": "+1 (555) 123-4567 ext. 890",
+    "company": "Test Corp"
+  },
+
+  "test_uppercase_email": {
+    "_comment": "Tests email normalization (should lowercase).",
+    "email": "UPPERCASE.EMAIL@COMPANY.COM",
+    "firstName": "Test",
+    "lastName": "Case",
+    "company": "Case Sensitive Inc"
+  },
+
+  "test_high_budget_keywords": {
+    "_comment": "Tests budget parsing with text-based budget ranges.",
+    "email": "budget.test@example.com",
+    "firstName": "Budget",
+    "lastName": "Tester",
+    "phone": "5551234567",
+    "company": "Budget Co",
+    "message": "Need help with efficiency improvements",
+    "useCase": "process optimization",
+    "timeline": "this month",
+    "budget": "10k-20k range",
+    "role": "CEO"
+  },
+
+  "test_duplicate_prevention": {
+    "_comment": "Send this twice with the same email to test duplicate handling. Second submission should update, not create new.",
+    "email": "duplicate.test@example.com",
+    "firstName": "Duplicate",
+    "lastName": "Test",
+    "phone": "5559999999",
+    "company": "Dupe Corp",
+    "message": "First submission",
+    "source": "test"
+  },
+
+  "test_alternative_field_names": {
+    "_comment": "Tests handling of alternative field name conventions.",
+    "email": "alternative.fields@example.com",
+    "first_name": "Alternative",
+    "last_name": "Fields",
+    "phoneNumber": "5551112222",
+    "companyName": "Alt Fields Inc",
+    "comments": "Testing alternative field names",
+    "utm_source": "google_ads",
+    "interest": "workflow tools",
+    "timeframe": "asap",
+    "budgetRange": "5000-10000",
+    "jobTitle": "Head of Marketing"
+  }
+}
