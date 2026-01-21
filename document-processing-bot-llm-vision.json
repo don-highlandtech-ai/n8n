@@ -1,0 +1,832 @@
+{
+  "name": "Document Processing Bot (LLM Vision Edition)",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "readStatus": "unread",
+          "receivedAfter": "={{ $now.minus({ hours: 24 }).toISO() }}"
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -200,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "rootFolderId",
+              "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID"
+            },
+            {
+              "name": "spreadsheetId",
+              "value": "YOUR_GOOGLE_SHEETS_ID"
+            },
+            {
+              "name": "sheetName",
+              "value": "Document Log"
+            },
+            {
+              "name": "notificationEmail",
+              "value": "your-email@example.com"
+            },
+            {
+              "name": "processedLabel",
+              "value": "DocBot/Processed"
+            }
+          ],
+          "number": [
+            {
+              "name": "confidenceThreshold",
+              "value": 0.7
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        20,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-attachments",
+              "leftValue": "={{ $json.attachments?.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-has-attachments",
+      "name": "Has Attachments?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "attachments",
+        "options": {}
+      },
+      "id": "split-attachments",
+      "name": "Split Attachments",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "check-pdf",
+              "leftValue": "={{ $json.attachments.mimeType }}",
+              "rightValue": "application/pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "check-image-jpeg",
+              "leftValue": "={{ $json.attachments.mimeType }}",
+              "rightValue": "image/jpeg",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "check-image-png",
+              "leftValue": "={{ $json.attachments.mimeType }}",
+              "rightValue": "image/png",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "check-image-webp",
+              "leftValue": "={{ $json.attachments.mimeType }}",
+              "rightValue": "image/webp",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "if-valid-document",
+      "name": "Is Valid Document?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        680,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "GPT-4O"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are an expert document processing assistant. Your job is to analyze documents (invoices, receipts, statements, contracts) and extract key information with high accuracy.\n\nYou must ALWAYS respond with valid JSON in this exact format:\n{\n  \"confidence\": 0.95,\n  \"document_type\": \"invoice|receipt|statement|contract|other\",\n  \"vendor_name\": \"Company Name\",\n  \"vendor_address\": \"Full address if visible\",\n  \"document_number\": \"Invoice/Receipt number\",\n  \"document_date\": \"YYYY-MM-DD\",\n  \"due_date\": \"YYYY-MM-DD or null\",\n  \"currency\": \"USD|EUR|GBP|etc\",\n  \"subtotal\": 0.00,\n  \"tax_amount\": 0.00,\n  \"total_amount\": 0.00,\n  \"payment_method\": \"Credit Card|Cash|Bank Transfer|etc or null\",\n  \"line_items\": [\n    {\n      \"description\": \"Item description\",\n      \"quantity\": 1,\n      \"unit_price\": 0.00,\n      \"total\": 0.00\n    }\n  ],\n  \"notes\": \"Any additional relevant information\",\n  \"extraction_warnings\": [\"List any fields that were unclear or estimated\"]\n}\n\nRules:\n1. Set 'confidence' between 0.0 and 1.0 based on image quality and data clarity\n2. If a field is not visible or applicable, use null\n3. Always use numbers without currency symbols for amounts\n4. Dates must be in YYYY-MM-DD format\n5. If the document is blurry or illegible, set confidence below 0.5 and list issues in extraction_warnings\n6. For line_items, extract as many as visible. Use empty array [] if none found",
+              "role": "system"
+            },
+            {
+              "content": "=Please analyze this document and extract all relevant information. The file name is: {{ $json.attachments.filename }}\n\nProvide your response as JSON only, no additional text.",
+              "role": "user"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 4096,
+          "temperature": 0.1
+        }
+      },
+      "id": "openai-vision",
+      "name": "OpenAI Vision Extract",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        100
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the AI response and prepare data for sheets and drive\nconst input = $input.all();\nconst config = $('Set Config').first().json;\n\nlet results = [];\n\nfor (const item of input) {\n  try {\n    // Get the AI response text\n    let aiResponse = item.json.message?.content || item.json.text || item.json.output || '';\n    \n    // Clean up the response - remove markdown code blocks if present\n    aiResponse = aiResponse.replace(/```json\\n?/gi, '').replace(/```\\n?/gi, '').trim();\n    \n    // Parse the JSON response\n    let extractedData;\n    try {\n      extractedData = JSON.parse(aiResponse);\n    } catch (parseError) {\n      // If parsing fails, create error response\n      extractedData = {\n        confidence: 0,\n        document_type: 'unknown',\n        vendor_name: 'PARSE_ERROR',\n        total_amount: null,\n        extraction_warnings: ['Failed to parse AI response: ' + parseError.message]\n      };\n    }\n    \n    // Get original email and attachment info\n    const originalEmail = $('Gmail Trigger').first().json;\n    const attachment = $('Split Attachments').first().json.attachments || {};\n    \n    // Determine if we need to send alert\n    const confidenceThreshold = config.confidenceThreshold || 0.7;\n    const needsReview = extractedData.confidence < confidenceThreshold || \n                        !extractedData.vendor_name || \n                        !extractedData.total_amount ||\n                        extractedData.extraction_warnings?.length > 0;\n    \n    // Generate new filename based on extracted data\n    const date = extractedData.document_date || new Date().toISOString().split('T')[0];\n    const vendor = (extractedData.vendor_name || 'Unknown').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);\n    const docType = extractedData.document_type || 'document';\n    const originalExt = attachment.filename?.split('.').pop() || 'pdf';\n    const newFilename = `${date}_${vendor}_${docType}.${originalExt}`;\n    \n    results.push({\n      json: {\n        // Extracted document data\n        ...extractedData,\n        \n        // Processing metadata\n        original_filename: attachment.filename,\n        new_filename: newFilename,\n        email_subject: originalEmail.subject,\n        email_from: originalEmail.from?.emailAddress || originalEmail.from,\n        email_date: originalEmail.date,\n        email_id: originalEmail.id,\n        processed_at: new Date().toISOString(),\n        \n        // Review flags\n        needs_review: needsReview,\n        confidence_threshold: confidenceThreshold,\n        \n        // Config pass-through\n        config: {\n          rootFolderId: config.rootFolderId,\n          spreadsheetId: config.spreadsheetId,\n          sheetName: config.sheetName,\n          notificationEmail: config.notificationEmail,\n          processedLabel: config.processedLabel\n        }\n      },\n      binary: item.binary\n    });\n    \n  } catch (error) {\n    results.push({\n      json: {\n        error: true,\n        error_message: error.message,\n        needs_review: true,\n        config: config\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "parse-ai-response",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.config.spreadsheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.config.sheetName }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Processed Date": "={{ $json.processed_at }}",
+            "Document Type": "={{ $json.document_type }}",
+            "Vendor Name": "={{ $json.vendor_name }}",
+            "Document Number": "={{ $json.document_number }}",
+            "Document Date": "={{ $json.document_date }}",
+            "Due Date": "={{ $json.due_date }}",
+            "Currency": "={{ $json.currency }}",
+            "Subtotal": "={{ $json.subtotal }}",
+            "Tax": "={{ $json.tax_amount }}",
+            "Total": "={{ $json.total_amount }}",
+            "Confidence": "={{ $json.confidence }}",
+            "Original Filename": "={{ $json.original_filename }}",
+            "New Filename": "={{ $json.new_filename }}",
+            "Email From": "={{ $json.email_from }}",
+            "Email Subject": "={{ $json.email_subject }}",
+            "Needs Review": "={{ $json.needs_review }}",
+            "Warnings": "={{ $json.extraction_warnings?.join('; ') || '' }}",
+            "Notes": "={{ $json.notes }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Processed Date",
+              "displayName": "Processed Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Document Type",
+              "displayName": "Document Type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Vendor Name",
+              "displayName": "Vendor Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Document Number",
+              "displayName": "Document Number",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Document Date",
+              "displayName": "Document Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Due Date",
+              "displayName": "Due Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Currency",
+              "displayName": "Currency",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Subtotal",
+              "displayName": "Subtotal",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number"
+            },
+            {
+              "id": "Tax",
+              "displayName": "Tax",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number"
+            },
+            {
+              "id": "Total",
+              "displayName": "Total",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number"
+            },
+            {
+              "id": "Confidence",
+              "displayName": "Confidence",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number"
+            },
+            {
+              "id": "Original Filename",
+              "displayName": "Original Filename",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "New Filename",
+              "displayName": "New Filename",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Email From",
+              "displayName": "Email From",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Email Subject",
+              "displayName": "Email Subject",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Needs Review",
+              "displayName": "Needs Review",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean"
+            },
+            {
+              "id": "Warnings",
+              "displayName": "Warnings",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "google-sheets-log",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1340,
+        100
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $json.config.rootFolderId }}",
+          "mode": "id"
+        },
+        "name": "={{ $json.new_filename }}",
+        "options": {
+          "simplifyOutput": true
+        }
+      },
+      "id": "google-drive-upload",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1560,
+        100
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Parse AI Response').item.json.email_id }}",
+        "labelIds": [
+          "={{ $('Parse AI Response').item.json.config.processedLabel }}"
+        ]
+      },
+      "id": "gmail-add-label",
+      "name": "Mark as Processed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1780,
+        100
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "needs-review",
+              "leftValue": "={{ $('Parse AI Response').item.json.needs_review }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-needs-review",
+      "name": "Needs Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        2000,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Parse AI Response').item.json.config.notificationEmail }}",
+        "subject": "=⚠️ DocBot Alert: Document Needs Review - {{ $('Parse AI Response').item.json.vendor_name || 'Unknown Vendor' }}",
+        "message": "=<h2>Document Processing Alert</h2>\n\n<p>The Document Processing Bot has flagged a document for your review.</p>\n\n<h3>Document Details</h3>\n<ul>\n  <li><strong>Original Filename:</strong> {{ $('Parse AI Response').item.json.original_filename }}</li>\n  <li><strong>Vendor:</strong> {{ $('Parse AI Response').item.json.vendor_name || 'Could not determine' }}</li>\n  <li><strong>Document Type:</strong> {{ $('Parse AI Response').item.json.document_type || 'Unknown' }}</li>\n  <li><strong>Total Amount:</strong> {{ $('Parse AI Response').item.json.currency || '' }} {{ $('Parse AI Response').item.json.total_amount || 'Not extracted' }}</li>\n  <li><strong>Document Date:</strong> {{ $('Parse AI Response').item.json.document_date || 'Not found' }}</li>\n</ul>\n\n<h3>Why This Needs Review</h3>\n<ul>\n  <li><strong>AI Confidence:</strong> {{ Math.round(($('Parse AI Response').item.json.confidence || 0) * 100) }}% (threshold: {{ Math.round(($('Parse AI Response').item.json.confidence_threshold || 0.7) * 100) }}%)</li>\n  <li><strong>Extraction Warnings:</strong> {{ $('Parse AI Response').item.json.extraction_warnings?.join(', ') || 'None' }}</li>\n</ul>\n\n<h3>Email Source</h3>\n<ul>\n  <li><strong>From:</strong> {{ $('Parse AI Response').item.json.email_from }}</li>\n  <li><strong>Subject:</strong> {{ $('Parse AI Response').item.json.email_subject }}</li>\n  <li><strong>Received:</strong> {{ $('Parse AI Response').item.json.email_date }}</li>\n</ul>\n\n<h3>Actions Taken</h3>\n<ul>\n  <li>✅ Document has been uploaded to Google Drive as: {{ $('Parse AI Response').item.json.new_filename }}</li>\n  <li>✅ Data has been logged to Google Sheets (marked for review)</li>\n  <li>⚠️ Please verify the extracted data in your spreadsheet</li>\n</ul>\n\n<p><em>This is an automated message from your Document Processing Bot.</em></p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "send-alert-email",
+      "name": "Send Alert Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2220,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "no-op-complete",
+      "name": "Processing Complete",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2220,
+        200
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "no-op-no-attachments",
+      "name": "No Attachments",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        460,
+        400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "no-op-invalid-file",
+      "name": "Invalid File Type",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ $json.error_message || 'An error occurred during document processing' }}"
+      },
+      "id": "error-handler",
+      "name": "Handle Errors",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-error",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-error",
+      "name": "Has Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        1340,
+        -100
+      ]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Has Attachments?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Attachments?": {
+      "main": [
+        [
+          {
+            "node": "Split Attachments",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Attachments": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Document?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Document?": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Vision Extract",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Invalid File Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Vision Extract": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Has Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Error?": {
+      "main": [
+        [
+          {
+            "node": "Handle Errors",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Upload to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Mark as Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Processed": {
+      "main": [
+        [
+          {
+            "node": "Needs Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Review?": {
+      "main": [
+        [
+          {
+            "node": "Send Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Processing Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": ""
+  },
+  "pinData": {},
+  "tags": [
+    {
+      "name": "Document Processing",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "AI Vision",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "Automation",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 1,
+  "notes": "Document Processing Bot (LLM Vision Edition)\n\n## Overview\nThis workflow automatically processes documents from your inbox using AI Vision (GPT-4o) to extract data without OCR templates.\n\n## Setup Instructions\n\n### 1. Configure Credentials\n- Gmail OAuth2 (for trigger, labeling, and alerts)\n- OpenAI API Key (must have GPT-4o access)\n- Google Sheets OAuth2\n- Google Drive OAuth2\n\n### 2. Update the 'Set Config' Node\n- rootFolderId: Your Google Drive folder ID\n- spreadsheetId: Your Google Sheets ID\n- sheetName: Name of the sheet tab (default: 'Document Log')\n- notificationEmail: Email for alerts\n- processedLabel: Gmail label name (default: 'DocBot/Processed')\n\n### 3. Prepare Google Sheet\nCreate columns: Processed Date, Document Type, Vendor Name, Document Number, Document Date, Due Date, Currency, Subtotal, Tax, Total, Confidence, Original Filename, New Filename, Email From, Email Subject, Needs Review, Warnings, Notes\n\n### 4. Create Gmail Label\nCreate a label called 'DocBot/Processed' in Gmail\n\n## Customizing Extracted Fields\nEdit the system prompt in the 'OpenAI Vision Extract' node to add or remove fields from the JSON schema."
+}
