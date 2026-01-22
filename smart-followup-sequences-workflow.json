@@ -1,0 +1,1677 @@
+{
+  "name": "Smart Follow-up Sequences AI Agent",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "config-start",
+      "name": "On clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 300],
+      "notes": "Use this to manually test the workflow. Connect test lead data after Set Config."
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "crmProvider",
+              "value": "hubspot"
+            },
+            {
+              "name": "emailProvider",
+              "value": "gmail"
+            },
+            {
+              "name": "timezone",
+              "value": "America/New_York"
+            },
+            {
+              "name": "quietHoursStart",
+              "value": "20:00"
+            },
+            {
+              "name": "quietHoursEnd",
+              "value": "08:00"
+            },
+            {
+              "name": "sheetId",
+              "value": "YOUR_GOOGLE_SHEET_ID_HERE"
+            },
+            {
+              "name": "sheetTabName",
+              "value": "Lead Follow-up Log"
+            },
+            {
+              "name": "ownerNotificationEmail",
+              "value": "your-email@company.com"
+            },
+            {
+              "name": "airtableBaseId",
+              "value": "YOUR_AIRTABLE_BASE_ID"
+            },
+            {
+              "name": "airtableTableName",
+              "value": "Leads"
+            },
+            {
+              "name": "openaiModel",
+              "value": "gpt-4o-mini"
+            }
+          ],
+          "number": [
+            {
+              "name": "maxTouchesPerDayPerLead",
+              "value": 2
+            },
+            {
+              "name": "minHoursBetweenTouches",
+              "value": 16
+            },
+            {
+              "name": "replyDetectionWindowDays",
+              "value": 30
+            },
+            {
+              "name": "confidenceThreshold",
+              "value": 0.7
+            },
+            {
+              "name": "inactivityThresholdDays",
+              "value": 3
+            },
+            {
+              "name": "globalRateLimitPerMinute",
+              "value": 10
+            }
+          ],
+          "boolean": [
+            {
+              "name": "useSms",
+              "value": false
+            },
+            {
+              "name": "sequencesEnabled",
+              "value": true
+            },
+            {
+              "name": "testMode",
+              "value": true
+            },
+            {
+              "name": "requireSmsConsent",
+              "value": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 300],
+      "notes": "CONFIGURATION CENTER - Edit these values:\n\n• crmProvider: 'hubspot' or 'airtable'\n• emailProvider: 'gmail' or 'smtp'\n• useSms: Enable Twilio SMS (requires consent)\n• testMode: TRUE = sends only to ownerNotificationEmail\n• quietHoursStart/End: No sends during these hours\n• timezone: Your local timezone\n• sheetId: Google Sheet ID for logging\n• confidenceThreshold: Min LLM confidence (0.70 default)\n• sequencesEnabled: Master on/off switch"
+    },
+    {
+      "parameters": {
+        "values": {
+          "object": [
+            {
+              "name": "sequences",
+              "value": "={\n  \"new_lead\": {\n    \"name\": \"New Lead Sequence\",\n    \"steps\": [\n      { \"step\": 1, \"delayDays\": 0, \"delayHours\": 0, \"channel\": \"email\", \"template\": \"welcome\" },\n      { \"step\": 2, \"delayDays\": 2, \"delayHours\": 0, \"channel\": \"email\", \"template\": \"value_prop\" },\n      { \"step\": 3, \"delayDays\": 4, \"delayHours\": 0, \"channel\": \"sms_or_email\", \"template\": \"soft_cta\" }\n    ]\n  },\n  \"engaged_lead\": {\n    \"name\": \"Engaged Lead Sequence\",\n    \"steps\": [\n      { \"step\": 1, \"delayDays\": 0, \"delayHours\": 0, \"channel\": \"email\", \"template\": \"engagement_response\" },\n      { \"step\": 2, \"delayDays\": 1, \"delayHours\": 0, \"channel\": \"email\", \"template\": \"deeper_value\" },\n      { \"step\": 3, \"delayDays\": 3, \"delayHours\": 0, \"channel\": \"sms_or_email\", \"template\": \"meeting_ask\" }\n    ]\n  },\n  \"nudge\": {\n    \"name\": \"Nudge Sequence\",\n    \"steps\": [\n      { \"step\": 1, \"delayDays\": 0, \"delayHours\": 0, \"channel\": \"email\", \"template\": \"gentle_nudge\" },\n      { \"step\": 2, \"delayDays\": 3, \"delayHours\": 0, \"channel\": \"email\", \"template\": \"value_reminder\" },\n      { \"step\": 3, \"delayDays\": 5, \"delayHours\": 0, \"channel\": \"sms_or_email\", \"template\": \"last_chance\" }\n    ]\n  },\n  \"post_meeting\": {\n    \"name\": \"Post-Meeting Confirmation\",\n    \"steps\": [\n      { \"step\": 1, \"delayDays\": 0, \"delayHours\": 0, \"channel\": \"email\", \"template\": \"meeting_confirmation\" }\n    ]\n  }\n}"
+            },
+            {
+              "name": "valueProps",
+              "value": "=[\n  {\n    \"id\": \"time_savings\",\n    \"text\": \"Our clients typically save 5-10 hours per week by automating their most repetitive tasks.\",\n    \"best_for\": [\"operations\", \"admin\", \"general\"]\n  },\n  {\n    \"id\": \"revenue_growth\",\n    \"text\": \"Companies using our solution see an average 23% increase in response rates and faster deal cycles.\",\n    \"best_for\": [\"sales\", \"business development\", \"revenue\"]\n  },\n  {\n    \"id\": \"team_efficiency\",\n    \"text\": \"Your team can focus on high-value conversations while routine follow-ups happen automatically.\",\n    \"best_for\": [\"management\", \"team lead\", \"director\"]\n  },\n  {\n    \"id\": \"data_insights\",\n    \"text\": \"Get complete visibility into every touchpoint with automatic logging and performance analytics.\",\n    \"best_for\": [\"analytics\", \"marketing\", \"data\"]\n  },\n  {\n    \"id\": \"easy_setup\",\n    \"text\": \"Most teams are fully operational within 30 minutes, with no coding or technical expertise required.\",\n    \"best_for\": [\"small business\", \"startup\", \"non-technical\"]\n  }\n]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-sequences",
+      "name": "Set Sequences & Value Props",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 300],
+      "notes": "Sequence definitions and value proposition library.\nEdit steps, delays, and channels here.\nValue props are selected by the LLM based on lead context."
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-event",
+        "options": {
+          "responseMode": "onReceived"
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook: Lead Events",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 520],
+      "webhookId": "lead-event-webhook",
+      "notes": "Universal webhook for:\n• Form submissions (Typeform, Webflow, HubSpot Forms)\n• Website activity events\n• Custom integrations\n\nExpected payload:\n{\n  \"event_type\": \"new_lead\" | \"engagement\" | \"form_submit\" | \"page_visit\",\n  \"lead\": { leadId, email, first_name, ... },\n  \"activity\": { type, timestamp, details }\n}"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "schedule-inactivity",
+      "name": "Schedule: Inactivity Check",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 740],
+      "notes": "Runs every 30 minutes to check for inactive leads.\nTriggers Nudge Sequence for leads with no activity in X days."
+    },
+    {
+      "parameters": {
+        "eventsUi": {
+          "eventValues": [
+            {
+              "name": "eventCreated"
+            }
+          ]
+        }
+      },
+      "id": "calendar-trigger",
+      "name": "Google Calendar: Meeting Booked",
+      "type": "n8n-nodes-base.googleCalendarTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 960],
+      "notes": "Triggers when a meeting is booked.\nUsed to stop sequences and send confirmation.\n\nREQUIRED: Connect Google Calendar credentials."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "trigger-type-check",
+              "leftValue": "={{ $json.event_type || $json.triggerType || 'manual' }}",
+              "rightValue": "meeting_booked",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-trigger-type",
+      "name": "Route: Trigger Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [880, 520],
+      "notes": "Routes based on event type:\n• meeting_booked → Stop sequences, send confirmation\n• Other events → Continue to sequence selection"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize lead data from different sources\nconst input = $input.first().json;\nconst config = $('Set Config').first().json;\n\n// Determine source and extract lead data\nlet lead = {};\nlet eventType = 'manual';\nlet activity = {};\nlet source = 'unknown';\n\n// From webhook\nif (input.body) {\n  const body = input.body;\n  lead = body.lead || body;\n  eventType = body.event_type || 'new_lead';\n  activity = body.activity || {};\n  source = 'webhook';\n}\n// From HubSpot trigger\nelse if (input.properties) {\n  lead = {\n    leadId: input.id || input.vid,\n    email: input.properties.email?.value || input.properties.email,\n    first_name: input.properties.firstname?.value || input.properties.firstname,\n    last_name: input.properties.lastname?.value || input.properties.lastname,\n    company: input.properties.company?.value || input.properties.company,\n    role: input.properties.jobtitle?.value || input.properties.jobtitle,\n    phone: input.properties.phone?.value || input.properties.phone,\n    owner: input.properties.hubspot_owner_id?.value,\n    status: input.properties.lifecyclestage?.value || 'lead',\n    opt_out: input.properties.hs_email_optout?.value === 'true',\n    consent_sms: input.properties.consent_sms?.value === 'true',\n    lead_source: input.properties.hs_lead_source?.value || input.properties.hs_analytics_source?.value,\n    last_activity_type: input.properties.hs_last_sales_activity_type?.value,\n    last_activity_ts: input.properties.hs_last_sales_activity_timestamp?.value,\n    last_touch_ts: input.properties.notes_last_contacted?.value\n  };\n  eventType = 'new_lead';\n  source = 'hubspot';\n}\n// From Airtable\nelse if (input.fields) {\n  lead = {\n    leadId: input.id,\n    email: input.fields.Email || input.fields.email,\n    first_name: input.fields.FirstName || input.fields.first_name,\n    last_name: input.fields.LastName || input.fields.last_name,\n    company: input.fields.Company || input.fields.company,\n    role: input.fields.Role || input.fields.role,\n    phone: input.fields.Phone || input.fields.phone,\n    owner: input.fields.Owner || input.fields.owner,\n    status: input.fields.Status || input.fields.status || 'lead',\n    opt_out: input.fields.OptOut || input.fields.opt_out || false,\n    consent_sms: input.fields.ConsentSMS || input.fields.consent_sms || false,\n    lead_source: input.fields.LeadSource || input.fields.lead_source,\n    last_activity_type: input.fields.LastActivityType || input.fields.last_activity_type,\n    last_activity_ts: input.fields.LastActivityTimestamp || input.fields.last_activity_ts,\n    last_touch_ts: input.fields.LastTouchTimestamp || input.fields.last_touch_ts\n  };\n  eventType = input.fields.event_type || 'new_lead';\n  source = 'airtable';\n}\n// From Google Calendar (meeting booked)\nelse if (input.summary || input.attendees) {\n  const attendeeEmail = input.attendees?.find(a => !a.self)?.email;\n  lead = {\n    leadId: attendeeEmail,\n    email: attendeeEmail\n  };\n  eventType = 'meeting_booked';\n  activity = {\n    type: 'meeting_booked',\n    timestamp: input.start?.dateTime || new Date().toISOString(),\n    details: input.summary\n  };\n  source = 'calendar';\n}\n// From manual trigger or test\nelse if (input.leadId || input.email) {\n  lead = input;\n  eventType = input.event_type || 'manual';\n  source = 'manual';\n}\n\n// Generate unique lead ID if missing\nif (!lead.leadId && lead.email) {\n  lead.leadId = lead.email.toLowerCase().replace(/[^a-z0-9]/g, '_');\n}\n\n// Normalize timestamps\nconst now = new Date().toISOString();\nlead.last_activity_ts = lead.last_activity_ts || now;\nlead.last_touch_ts = lead.last_touch_ts || null;\n\n// Determine sequence based on event type\nlet sequenceName = 'new_lead';\nlet triggerType = eventType;\n\nswitch (eventType) {\n  case 'new_lead':\n  case 'form_submit':\n    sequenceName = 'new_lead';\n    break;\n  case 'engagement':\n  case 'email_open':\n  case 'email_click':\n  case 'page_visit':\n    sequenceName = 'engaged_lead';\n    break;\n  case 'inactivity':\n    sequenceName = 'nudge';\n    break;\n  case 'meeting_booked':\n    sequenceName = 'post_meeting';\n    break;\n  default:\n    sequenceName = 'new_lead';\n}\n\nreturn {\n  lead,\n  eventType,\n  triggerType,\n  sequenceName,\n  activity,\n  source,\n  processedAt: now,\n  config: {\n    testMode: config.testMode,\n    useSms: config.useSms,\n    requireSmsConsent: config.requireSmsConsent,\n    ownerNotificationEmail: config.ownerNotificationEmail\n  }\n};"
+      },
+      "id": "normalize-lead",
+      "name": "Normalize Lead Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 520],
+      "notes": "Normalizes lead data from different sources:\n• HubSpot properties\n• Airtable fields\n• Webhook payloads\n• Calendar events\n\nOutputs consistent lead object with sequence assignment."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "sequences-enabled",
+              "leftValue": "={{ $('Set Config').first().json.sequencesEnabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-sequences-enabled",
+      "name": "Check: Sequences Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1100, 600],
+      "notes": "Master on/off switch for sequences.\nIf disabled, logs event but takes no action."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check stop conditions\nconst input = $input.first().json;\nconst lead = input.lead;\nconst config = $('Set Config').first().json;\n\nconst stopReasons = [];\nlet shouldStop = false;\n\n// 1. Check opt-out\nif (lead.opt_out === true || lead.opt_out === 'true') {\n  stopReasons.push('Lead has opted out');\n  shouldStop = true;\n}\n\n// 2. Check disqualifying statuses\nconst disqualifyingStatuses = ['customer', 'closed_lost', 'disqualified', 'closed lost', 'won', 'lost'];\nconst leadStatus = (lead.status || '').toLowerCase();\nif (disqualifyingStatuses.some(s => leadStatus.includes(s))) {\n  stopReasons.push(`Lead status is ${lead.status}`);\n  shouldStop = true;\n}\n\n// 3. Check if lead replied recently (would need reply tracking)\nif (lead.replied_recently === true) {\n  stopReasons.push('Lead replied recently');\n  shouldStop = true;\n}\n\n// 4. Check if meeting already booked (unless this IS the meeting trigger)\nif (lead.meeting_booked === true && input.eventType !== 'meeting_booked') {\n  stopReasons.push('Meeting already booked');\n  shouldStop = true;\n}\n\n// 5. Check for missing critical data\nconst missingFields = [];\nif (!lead.email) missingFields.push('email');\nif (!lead.leadId) missingFields.push('leadId');\n\nif (missingFields.length > 0) {\n  stopReasons.push(`Missing critical fields: ${missingFields.join(', ')}`);\n  shouldStop = true;\n}\n\nreturn {\n  ...input,\n  stopCheck: {\n    shouldStop,\n    stopReasons,\n    missingFields,\n    checkedAt: new Date().toISOString()\n  }\n};"
+      },
+      "id": "check-stop-conditions",
+      "name": "Check Stop Conditions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 520],
+      "notes": "Checks all stop conditions:\n• Lead opted out\n• Status: Customer, Closed Lost, Disqualified\n• Lead replied recently\n• Meeting already booked\n• Missing critical fields (email, leadId)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should-stop",
+              "leftValue": "={{ $json.stopCheck.shouldStop }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-stop-condition",
+      "name": "Route: Should Stop?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1540, 520],
+      "notes": "Routes based on stop condition check.\nTRUE = Stop and log reason\nFALSE = Continue to dedupe check"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check quiet hours\nconst input = $input.first().json;\nconst config = $('Set Config').first().json;\n\nconst timezone = config.timezone || 'America/New_York';\nconst quietStart = config.quietHoursStart || '20:00';\nconst quietEnd = config.quietHoursEnd || '08:00';\n\n// Get current time in configured timezone\nconst now = new Date();\nconst options = { timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: false };\nconst timeStr = now.toLocaleTimeString('en-US', options);\nconst [currentHour, currentMinute] = timeStr.split(':').map(Number);\nconst currentMinutes = currentHour * 60 + currentMinute;\n\n// Parse quiet hours\nconst [startHour, startMinute] = quietStart.split(':').map(Number);\nconst [endHour, endMinute] = quietEnd.split(':').map(Number);\nconst startMinutes = startHour * 60 + startMinute;\nconst endMinutes = endHour * 60 + endMinute;\n\n// Check if current time is in quiet hours\nlet inQuietHours = false;\nif (startMinutes > endMinutes) {\n  // Quiet hours span midnight (e.g., 20:00 to 08:00)\n  inQuietHours = currentMinutes >= startMinutes || currentMinutes < endMinutes;\n} else {\n  // Quiet hours within same day\n  inQuietHours = currentMinutes >= startMinutes && currentMinutes < endMinutes;\n}\n\n// Calculate minutes until quiet hours end\nlet minutesUntilSendAllowed = 0;\nif (inQuietHours) {\n  if (currentMinutes >= startMinutes) {\n    // After midnight scenario\n    minutesUntilSendAllowed = (24 * 60 - currentMinutes) + endMinutes;\n  } else {\n    minutesUntilSendAllowed = endMinutes - currentMinutes;\n  }\n}\n\nreturn {\n  ...input,\n  quietHoursCheck: {\n    inQuietHours,\n    currentTime: timeStr,\n    timezone,\n    quietStart,\n    quietEnd,\n    minutesUntilSendAllowed,\n    checkedAt: now.toISOString()\n  }\n};"
+      },
+      "id": "check-quiet-hours",
+      "name": "Check Quiet Hours",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 440],
+      "notes": "Checks if current time is within quiet hours.\nDefault: 8pm - 8am in configured timezone.\nIf in quiet hours, calculates delay until allowed."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "in-quiet-hours",
+              "leftValue": "={{ $json.quietHoursCheck.inQuietHours }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-quiet-hours",
+      "name": "Route: In Quiet Hours?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1980, 440],
+      "notes": "If in quiet hours, delays execution.\nOtherwise, continues to dedupe check."
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.quietHoursCheck.minutesUntilSendAllowed }}",
+        "unit": "minutes"
+      },
+      "id": "wait-quiet-hours",
+      "name": "Wait: Until Quiet Hours End",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [2200, 340],
+      "notes": "Waits until quiet hours end before continuing.\nResumes at the configured quiet hours end time."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dedupe and idempotency check\n// Uses Google Sheets as the source of truth for sent messages\nconst input = $input.first().json;\nconst lead = input.lead;\nconst sequenceName = input.sequenceName;\n\n// Get step from sequence definition\nconst sequences = JSON.parse($('Set Sequences & Value Props').first().json.sequences);\nconst sequence = sequences[sequenceName];\n\nif (!sequence) {\n  return {\n    ...input,\n    dedupeCheck: {\n      isDuplicate: true,\n      reason: `Unknown sequence: ${sequenceName}`,\n      dedupeKey: null\n    }\n  };\n}\n\n// Determine current step (default to step 1 for new sequences)\nconst currentStep = input.currentStep || 1;\nconst stepConfig = sequence.steps.find(s => s.step === currentStep);\n\nif (!stepConfig) {\n  return {\n    ...input,\n    dedupeCheck: {\n      isDuplicate: true,\n      reason: `Invalid step ${currentStep} for sequence ${sequenceName}`,\n      dedupeKey: null\n    }\n  };\n}\n\n// Generate dedupe key: leadId + sequenceName + stepNumber\nconst dedupeKey = `${lead.leadId}_${sequenceName}_${currentStep}`;\n\n// Note: Actual dedupe lookup happens in the next node via Sheets\n// This node prepares the key and step configuration\n\nreturn {\n  ...input,\n  currentStep,\n  stepConfig,\n  sequence: {\n    name: sequence.name,\n    key: sequenceName,\n    totalSteps: sequence.steps.length\n  },\n  dedupeKey,\n  dedupeCheck: {\n    isDuplicate: false, // Will be updated by Sheets lookup\n    dedupeKey,\n    preparedAt: new Date().toISOString()\n  }\n};"
+      },
+      "id": "prepare-dedupe",
+      "name": "Prepare Dedupe Key",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 520],
+      "notes": "Generates dedupe key: leadId_sequenceName_stepNumber\nPrepares step configuration from sequence definition.\nActual lookup happens via Google Sheets."
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "={{ $('Set Config').first().json.sheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "={{ $('Set Config').first().json.sheetTabName || 'Lead Follow-up Log' }}"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "dedupe_key",
+              "lookupValue": "={{ $json.dedupeKey }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sheets-dedupe-lookup",
+      "name": "Sheets: Dedupe Lookup",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2420, 520],
+      "notes": "Looks up the dedupe key in the log sheet.\nIf found, this step was already sent.\n\nREQUIRED: Connect Google Sheets credentials."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process dedupe lookup result\nconst input = $input.first().json;\nconst items = $input.all();\n\n// Check if any rows were returned from the lookup\nconst existingEntry = items.length > 0 && items[0].json.dedupe_key;\n\nlet result;\n\nif (existingEntry) {\n  // Entry exists - this is a duplicate\n  result = {\n    ...input,\n    dedupeCheck: {\n      ...input.dedupeCheck,\n      isDuplicate: true,\n      reason: 'Step already sent for this lead',\n      existingEntry: items[0].json\n    }\n  };\n} else {\n  // No entry - not a duplicate\n  result = {\n    ...input,\n    dedupeCheck: {\n      ...input.dedupeCheck,\n      isDuplicate: false,\n      reason: null\n    }\n  };\n}\n\nreturn result;"
+      },
+      "id": "process-dedupe-result",
+      "name": "Process Dedupe Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2640, 520],
+      "notes": "Processes the Sheets lookup result.\nMarks as duplicate if entry exists."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-duplicate",
+              "leftValue": "={{ $json.dedupeCheck.isDuplicate }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-dedupe",
+      "name": "Route: Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2860, 520],
+      "notes": "If duplicate, skips sending and logs.\nOtherwise, continues to rate limit check."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rate limit check\nconst input = $input.first().json;\nconst lead = input.lead;\nconst config = $('Set Config').first().json;\n\nconst maxTouchesPerDay = config.maxTouchesPerDayPerLead || 2;\nconst minHoursBetween = config.minHoursBetweenTouches || 16;\n\n// Check last touch timestamp\nconst lastTouchTs = lead.last_touch_ts;\nlet hoursSinceLastTouch = Infinity;\n\nif (lastTouchTs) {\n  const lastTouch = new Date(lastTouchTs);\n  const now = new Date();\n  hoursSinceLastTouch = (now - lastTouch) / (1000 * 60 * 60);\n}\n\nconst belowMinInterval = hoursSinceLastTouch < minHoursBetween;\n\n// Note: Daily touch count would need to be tracked separately\n// For now, we use the last touch timestamp as the primary rate limit\n\nreturn {\n  ...input,\n  rateLimitCheck: {\n    exceedsLimit: belowMinInterval,\n    hoursSinceLastTouch: Math.round(hoursSinceLastTouch * 10) / 10,\n    minHoursBetween,\n    maxTouchesPerDay,\n    reason: belowMinInterval ? `Only ${hoursSinceLastTouch.toFixed(1)} hours since last touch (min: ${minHoursBetween})` : null,\n    checkedAt: new Date().toISOString()\n  }\n};"
+      },
+      "id": "check-rate-limit",
+      "name": "Check Rate Limit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3080, 440],
+      "notes": "Checks rate limiting rules:\n• Max touches per day per lead\n• Min hours between touches\n\nPrevents over-messaging leads."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "exceeds-rate-limit",
+              "leftValue": "={{ $json.rateLimitCheck.exceedsLimit }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-rate-limit",
+      "name": "Route: Exceeds Rate Limit?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [3300, 440],
+      "notes": "If rate limit exceeded, delays or skips.\nOtherwise, continues to message generation."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare context for LLM message generation\nconst input = $input.first().json;\nconst lead = input.lead;\nconst stepConfig = input.stepConfig;\nconst sequence = input.sequence;\nconst config = $('Set Config').first().json;\nconst valueProps = JSON.parse($('Set Sequences & Value Props').first().json.valueProps);\n\n// Format last activity for context\nlet lastActivityContext = 'No recent activity recorded';\nif (lead.last_activity_type && lead.last_activity_ts) {\n  const activityDate = new Date(lead.last_activity_ts);\n  const daysAgo = Math.round((new Date() - activityDate) / (1000 * 60 * 60 * 24));\n  lastActivityContext = `${lead.last_activity_type} ${daysAgo} day(s) ago`;\n}\n\n// Build lead context\nconst leadContext = {\n  first_name: lead.first_name || null,\n  last_name: lead.last_name || null,\n  company: lead.company || null,\n  role: lead.role || null,\n  email: lead.email,\n  lead_source: lead.lead_source || 'Unknown',\n  last_activity: lastActivityContext,\n  consent_sms: lead.consent_sms === true,\n  has_phone: !!lead.phone\n};\n\n// Determine available data quality\nconst availableFields = Object.entries(leadContext)\n  .filter(([k, v]) => v !== null && v !== 'Unknown' && v !== false)\n  .map(([k]) => k);\n\nconst missingCriticalFields = [];\nif (!leadContext.first_name) missingCriticalFields.push('first_name');\nif (!leadContext.company) missingCriticalFields.push('company');\n\nreturn {\n  ...input,\n  llmContext: {\n    lead: leadContext,\n    sequence: {\n      name: sequence.name,\n      step: stepConfig.step,\n      totalSteps: sequence.totalSteps,\n      template: stepConfig.template,\n      channel: stepConfig.channel\n    },\n    valueProps: valueProps,\n    availableFields,\n    missingCriticalFields,\n    useSms: config.useSms && stepConfig.channel === 'sms_or_email' && leadContext.consent_sms && leadContext.has_phone\n  }\n};"
+      },
+      "id": "prepare-llm-context",
+      "name": "Prepare LLM Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3520, 360],
+      "notes": "Prepares all context for LLM:\n• Lead data and available fields\n• Sequence and step info\n• Value props library\n• Channel determination (email vs SMS)"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "={{ $('Set Config').first().json.openaiModel || 'gpt-4o-mini' }}"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a professional sales follow-up assistant that writes personalized, warm, and effective messages. You generate follow-up emails and SMS messages for B2B sales sequences.\n\nYour task is to write a follow-up message based on the lead context and sequence step provided.\n\nRULES:\n1. NEVER use placeholders like {FirstName}, {{company}}, [NAME], etc. If data is missing, write naturally without it (e.g., \"Hi there\" instead of \"Hi {FirstName}\").\n2. Keep messages concise and professional. Emails should be 50-150 words. SMS should be under 160 characters.\n3. Match the tone to the sequence step (welcome, nurture, nudge, etc.).\n4. Include a clear but soft call-to-action appropriate to the step.\n5. Select ONE value proposition from the provided library that best matches the lead's role/company.\n6. Personalize based on available data: name, company, role, lead source, last activity.\n7. Set confidence score 0-1 based on data quality. Drop below 0.7 if first_name AND company are missing.\n8. Set compliance_ok to false if opt_out is true or if SMS is requested without consent.\n9. Set stop_recommended to true only if you detect the lead asked to stop or seems upset (from reply content if available).\n\nOUTPUT FORMAT (JSON only, no markdown):\n{\n  \"subject\": \"Email subject line (leave empty for SMS)\",\n  \"body\": \"Full email body text\",\n  \"sms\": \"SMS message under 160 chars (only if SMS channel)\",\n  \"confidence\": 0.85,\n  \"personalization_used\": [\"first_name\", \"company\", \"last_activity\"],\n  \"value_prop_selected\": \"time_savings\",\n  \"compliance_ok\": true,\n  \"stop_recommended\": false,\n  \"notes\": \"Brief note on why this message was crafted this way\"\n}"
+            },
+            {
+              "role": "user",
+              "content": "=Generate a follow-up message for this context:\n\nLEAD:\n- First Name: {{ $json.llmContext.lead.first_name || 'Not provided' }}\n- Last Name: {{ $json.llmContext.lead.last_name || 'Not provided' }}\n- Company: {{ $json.llmContext.lead.company || 'Not provided' }}\n- Role: {{ $json.llmContext.lead.role || 'Not provided' }}\n- Email: {{ $json.llmContext.lead.email }}\n- Lead Source: {{ $json.llmContext.lead.lead_source }}\n- Last Activity: {{ $json.llmContext.lead.last_activity }}\n- Has SMS Consent: {{ $json.llmContext.lead.consent_sms }}\n- Has Phone: {{ $json.llmContext.lead.has_phone }}\n\nSEQUENCE:\n- Name: {{ $json.llmContext.sequence.name }}\n- Step: {{ $json.llmContext.sequence.step }} of {{ $json.llmContext.sequence.totalSteps }}\n- Template Type: {{ $json.llmContext.sequence.template }}\n- Requested Channel: {{ $json.llmContext.sequence.channel }}\n- Should Use SMS: {{ $json.llmContext.useSms }}\n\nVALUE PROPS LIBRARY:\n{{ JSON.stringify($json.llmContext.valueProps, null, 2) }}\n\nAVAILABLE DATA FIELDS: {{ $json.llmContext.availableFields.join(', ') }}\nMISSING CRITICAL FIELDS: {{ $json.llmContext.missingCriticalFields.join(', ') || 'None' }}\n\nGenerate the appropriate follow-up message now. Return ONLY valid JSON, no markdown code blocks."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 1000,
+          "responseFormat": "text"
+        }
+      },
+      "id": "openai-generate-message",
+      "name": "OpenAI: Generate Message",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.7,
+      "position": [3740, 360],
+      "notes": "Generates personalized follow-up message using GPT-4o-mini.\nOutputs structured JSON with subject, body, SMS, confidence score.\n\nREQUIRED: Connect OpenAI credentials."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate LLM response\nconst input = $input.first().json;\nconst llmResponse = input.message?.content || input.text || input.content;\nconst config = $('Set Config').first().json;\n\nlet parsedMessage;\ntry {\n  // Clean up response (remove markdown code blocks if present)\n  let cleanResponse = llmResponse;\n  if (cleanResponse.includes('```')) {\n    cleanResponse = cleanResponse.replace(/```json\\n?/g, '').replace(/```\\n?/g, '');\n  }\n  parsedMessage = JSON.parse(cleanResponse.trim());\n} catch (e) {\n  // Fallback if parsing fails\n  parsedMessage = {\n    subject: 'Following up',\n    body: 'I wanted to follow up on my previous message. Would you have time for a quick call this week?',\n    sms: 'Hi! Following up - do you have time for a quick call?',\n    confidence: 0.5,\n    personalization_used: [],\n    value_prop_selected: null,\n    compliance_ok: true,\n    stop_recommended: false,\n    notes: 'Fallback message due to LLM parsing error: ' + e.message\n  };\n}\n\n// Get the previous context\nconst prevNode = $('Prepare LLM Context').first().json;\n\n// Validate required fields\nconst requiredFields = ['subject', 'body', 'confidence', 'compliance_ok'];\nconst missingFields = requiredFields.filter(f => parsedMessage[f] === undefined);\n\nif (missingFields.length > 0) {\n  parsedMessage.notes = (parsedMessage.notes || '') + ` Missing fields: ${missingFields.join(', ')}`;\n  parsedMessage.confidence = Math.min(parsedMessage.confidence || 0.5, 0.5);\n}\n\n// Determine if confidence meets threshold\nconst confidenceThreshold = config.confidenceThreshold || 0.7;\nconst meetsConfidenceThreshold = parsedMessage.confidence >= confidenceThreshold;\n\nreturn {\n  ...prevNode,\n  generatedMessage: parsedMessage,\n  messageValidation: {\n    meetsConfidenceThreshold,\n    confidenceThreshold,\n    actualConfidence: parsedMessage.confidence,\n    complianceOk: parsedMessage.compliance_ok,\n    stopRecommended: parsedMessage.stop_recommended,\n    validatedAt: new Date().toISOString()\n  }\n};"
+      },
+      "id": "parse-llm-response",
+      "name": "Parse LLM Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3960, 360],
+      "notes": "Parses and validates the LLM JSON response.\nHandles parsing errors with fallback message.\nChecks confidence threshold and compliance flags."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "compliance-ok",
+              "leftValue": "={{ $json.generatedMessage.compliance_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "not-stop-recommended",
+              "leftValue": "={{ $json.generatedMessage.stop_recommended }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-compliance",
+      "name": "Route: Compliance OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [4180, 360],
+      "notes": "Checks:\n• compliance_ok from LLM\n• stop_recommended flag\n\nBlocks send if compliance issues detected."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "meets-confidence",
+              "leftValue": "={{ $json.messageValidation.meetsConfidenceThreshold }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-confidence",
+      "name": "Route: Confidence OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [4400, 280],
+      "notes": "Checks if LLM confidence meets threshold.\nLow confidence triggers notification but may still send."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "use-sms",
+              "leftValue": "={{ $json.llmContext.useSms }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-channel",
+      "name": "Route: Email or SMS?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [4620, 200],
+      "notes": "Routes to appropriate channel:\n• SMS if enabled, consent given, and step allows\n• Email otherwise"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "test-mode",
+              "leftValue": "={{ $('Set Config').first().json.testMode }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-test-mode-email",
+      "name": "Check: Test Mode? (Email)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [4840, 280],
+      "notes": "If Test Mode is ON, sends to owner email only.\nOtherwise, sends to actual lead."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.ownerNotificationEmail }}",
+        "subject": "=[TEST MODE] {{ $json.generatedMessage.subject }}",
+        "emailType": "text",
+        "message": "=TEST MODE - Would have sent to: {{ $json.lead.email }}\n\n---\n\n{{ $json.generatedMessage.body }}\n\n---\n\nSequence: {{ $json.sequence.name }}\nStep: {{ $json.currentStep }}\nConfidence: {{ $json.generatedMessage.confidence }}\nDedupe Key: {{ $json.dedupeKey }}"
+      },
+      "id": "gmail-send-test",
+      "name": "Gmail: Send Test Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [5060, 180],
+      "notes": "Sends test email to owner instead of lead.\nIncludes original recipient and metadata.\n\nREQUIRED: Connect Gmail credentials."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.lead.email }}",
+        "subject": "={{ $json.generatedMessage.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.generatedMessage.body }}"
+      },
+      "id": "gmail-send-live",
+      "name": "Gmail: Send Live Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [5060, 380],
+      "notes": "Sends actual email to lead.\n\nREQUIRED: Connect Gmail credentials."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "test-mode-sms",
+              "leftValue": "={{ $('Set Config').first().json.testMode }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-test-mode-sms",
+      "name": "Check: Test Mode? (SMS)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [4840, 80],
+      "notes": "If Test Mode is ON, sends SMS notification to owner email.\nOtherwise, sends actual SMS."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.ownerNotificationEmail }}",
+        "subject": "=[TEST MODE SMS] {{ $json.sequence.name }} - Step {{ $json.currentStep }}",
+        "emailType": "text",
+        "message": "=TEST MODE - Would have sent SMS to: {{ $json.lead.phone }}\n\n---\n\nSMS Content:\n{{ $json.generatedMessage.sms }}\n\n---\n\nLead: {{ $json.lead.email }}\nSequence: {{ $json.sequence.name }}\nStep: {{ $json.currentStep }}\nDedupe Key: {{ $json.dedupeKey }}"
+      },
+      "id": "gmail-sms-test-notification",
+      "name": "Gmail: SMS Test Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [5060, -20],
+      "notes": "Sends test notification email with SMS content.\nUsed when Test Mode is ON for SMS channel."
+    },
+    {
+      "parameters": {
+        "from": "={{ $('Set Config').first().json.twilioFromNumber }}",
+        "to": "={{ $json.lead.phone }}",
+        "message": "={{ $json.generatedMessage.sms }}"
+      },
+      "id": "twilio-send-sms",
+      "name": "Twilio: Send SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [5060, 80],
+      "notes": "Sends actual SMS via Twilio.\nOnly used when SMS is enabled and consent given.\n\nREQUIRED: Connect Twilio credentials.\nAdd 'twilioFromNumber' to Set Config."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare log entry\nconst input = $input.first().json;\nconst config = $('Set Config').first().json;\nconst lead = input.lead || {};\nconst sequence = input.sequence || {};\n\n// Determine action taken and channel\nlet actionTaken = input.actionTaken || 'sent';\nlet channel = input.channel || (input.llmContext?.useSms ? 'sms' : 'email');\nlet error = input.error || null;\n\n// Handle different entry points to this node\nif (input.stopCheck?.shouldStop) {\n  actionTaken = 'blocked';\n  error = input.stopCheck.stopReasons.join('; ');\n}\n\nif (input.dedupeCheck?.isDuplicate) {\n  actionTaken = 'skipped_duplicate';\n  error = input.dedupeCheck.reason;\n}\n\nif (input.rateLimitCheck?.exceedsLimit) {\n  actionTaken = 'skipped_rate_limit';\n  error = input.rateLimitCheck.reason;\n}\n\nif (input.messageValidation?.complianceOk === false || input.generatedMessage?.compliance_ok === false) {\n  actionTaken = 'blocked_compliance';\n  error = 'Compliance check failed';\n}\n\nif (input.generatedMessage?.stop_recommended) {\n  actionTaken = 'blocked_stop_recommended';\n  error = 'LLM recommended stopping';\n}\n\n// Build message preview (first 100 chars)\nlet messagePreview = '';\nif (input.generatedMessage) {\n  const msg = channel === 'sms' ? input.generatedMessage.sms : input.generatedMessage.body;\n  messagePreview = (msg || '').substring(0, 100);\n}\n\nconst logEntry = {\n  timestamp: new Date().toISOString(),\n  leadId: lead.leadId || '',\n  email: lead.email || '',\n  sequence: sequence.name || input.sequenceName || '',\n  step: input.currentStep || 1,\n  channel: channel,\n  subject: input.generatedMessage?.subject || '',\n  message_preview: messagePreview,\n  trigger_type: input.triggerType || input.eventType || '',\n  last_activity_type: lead.last_activity_type || '',\n  confidence: input.generatedMessage?.confidence || 0,\n  compliance_ok: input.generatedMessage?.compliance_ok ?? true,\n  action_taken: actionTaken,\n  error: error || '',\n  dedupe_key: input.dedupeKey || '',\n  test_mode: config.testMode ? 'TRUE' : 'FALSE',\n  value_prop_used: input.generatedMessage?.value_prop_selected || '',\n  personalization_fields: (input.generatedMessage?.personalization_used || []).join(', ')\n};\n\nreturn logEntry;"
+      },
+      "id": "prepare-log-entry",
+      "name": "Prepare Log Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [5500, 300],
+      "notes": "Prepares standardized log entry for Google Sheets.\nCaptures all actions, errors, and outcomes."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "={{ $('Set Config').first().json.sheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "={{ $('Set Config').first().json.sheetTabName || 'Lead Follow-up Log' }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "leadId": "={{ $json.leadId }}",
+            "email": "={{ $json.email }}",
+            "sequence": "={{ $json.sequence }}",
+            "step": "={{ $json.step }}",
+            "channel": "={{ $json.channel }}",
+            "subject": "={{ $json.subject }}",
+            "message_preview": "={{ $json.message_preview }}",
+            "trigger_type": "={{ $json.trigger_type }}",
+            "last_activity_type": "={{ $json.last_activity_type }}",
+            "confidence": "={{ $json.confidence }}",
+            "compliance_ok": "={{ $json.compliance_ok }}",
+            "action_taken": "={{ $json.action_taken }}",
+            "error": "={{ $json.error }}",
+            "dedupe_key": "={{ $json.dedupe_key }}",
+            "test_mode": "={{ $json.test_mode }}",
+            "value_prop_used": "={{ $json.value_prop_used }}",
+            "personalization_fields": "={{ $json.personalization_fields }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "timestamp", "displayName": "timestamp", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "leadId", "displayName": "leadId", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "email", "displayName": "email", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "sequence", "displayName": "sequence", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "step", "displayName": "step", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "channel", "displayName": "channel", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "subject", "displayName": "subject", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "message_preview", "displayName": "message_preview", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "trigger_type", "displayName": "trigger_type", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "last_activity_type", "displayName": "last_activity_type", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "confidence", "displayName": "confidence", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "compliance_ok", "displayName": "compliance_ok", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "action_taken", "displayName": "action_taken", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "error", "displayName": "error", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "dedupe_key", "displayName": "dedupe_key", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "test_mode", "displayName": "test_mode", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "value_prop_used", "displayName": "value_prop_used", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "personalization_fields", "displayName": "personalization_fields", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "sheets-log",
+      "name": "Sheets: Log Action",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [5720, 300],
+      "notes": "Logs every action to Google Sheets.\nCaptures: timestamp, lead info, sequence, action, errors, dedupe key.\n\nREQUIRED: Connect Google Sheets credentials."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.ownerNotificationEmail }}",
+        "subject": "=[Alert] Low Confidence Follow-up - {{ $json.lead.email }}",
+        "emailType": "text",
+        "message": "=A follow-up message was generated with LOW CONFIDENCE.\n\nLead: {{ $json.lead.email }}\nCompany: {{ $json.lead.company || 'Unknown' }}\nSequence: {{ $json.sequence.name }}\nStep: {{ $json.currentStep }}\n\nConfidence Score: {{ $json.generatedMessage.confidence }}\nThreshold: {{ $json.messageValidation.confidenceThreshold }}\n\nMissing Fields: {{ $json.llmContext.missingCriticalFields.join(', ') || 'None' }}\n\nLLM Notes: {{ $json.generatedMessage.notes }}\n\n---\n\nGenerated Message:\nSubject: {{ $json.generatedMessage.subject }}\n\n{{ $json.generatedMessage.body }}\n\n---\n\nThe message was still sent. Review and update lead data if needed."
+      },
+      "id": "notify-low-confidence",
+      "name": "Notify: Low Confidence",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [4620, 480],
+      "notes": "Sends notification when LLM confidence is below threshold.\nMessage is still sent but owner is alerted."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.ownerNotificationEmail }}",
+        "subject": "=[Alert] Compliance Block - {{ $json.lead.email }}",
+        "emailType": "text",
+        "message": "=A follow-up message was BLOCKED due to compliance issues.\n\nLead: {{ $json.lead.email }}\nCompany: {{ $json.lead.company || 'Unknown' }}\nSequence: {{ $json.sequence.name }}\nStep: {{ $json.currentStep }}\n\nCompliance OK: {{ $json.generatedMessage.compliance_ok }}\nStop Recommended: {{ $json.generatedMessage.stop_recommended }}\n\nLLM Notes: {{ $json.generatedMessage.notes }}\n\n---\n\nThe lead may have opted out, requested to stop, or lacks required consent.\nNo message was sent. Please review the lead record."
+      },
+      "id": "notify-compliance-block",
+      "name": "Notify: Compliance Block",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [4400, 540],
+      "notes": "Sends notification when message is blocked due to:\n• Opt-out detected\n• Stop recommended by LLM\n• Missing required consent"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle inactivity check trigger\nconst config = $('Set Config').first().json;\nconst inactivityDays = config.inactivityThresholdDays || 3;\n\n// This would typically query the CRM for inactive leads\n// For now, we output the trigger info for the next nodes to use\nreturn {\n  event_type: 'inactivity',\n  triggerType: 'inactivity_check',\n  inactivity_threshold_days: inactivityDays,\n  triggered_at: new Date().toISOString(),\n  note: 'Connect this to your CRM query to fetch leads inactive for ' + inactivityDays + ' days'\n};"
+      },
+      "id": "process-inactivity-trigger",
+      "name": "Process Inactivity Trigger",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 740],
+      "notes": "Processes scheduled inactivity check.\nConnect to HubSpot or Airtable query to fetch inactive leads."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process calendar trigger for meeting booked\nconst input = $input.first().json;\n\n// Extract attendee email from calendar event\nlet attendeeEmail = null;\nif (input.attendees && Array.isArray(input.attendees)) {\n  // Find first non-organizer attendee\n  const attendee = input.attendees.find(a => !a.organizer && !a.self);\n  attendeeEmail = attendee?.email;\n}\n\nreturn {\n  event_type: 'meeting_booked',\n  triggerType: 'meeting_booked',\n  meeting: {\n    summary: input.summary,\n    start: input.start,\n    end: input.end,\n    attendeeEmail: attendeeEmail,\n    calendarEventId: input.id\n  },\n  lead: {\n    email: attendeeEmail,\n    leadId: attendeeEmail?.toLowerCase().replace(/[^a-z0-9]/g, '_')\n  },\n  triggered_at: new Date().toISOString()\n};"
+      },
+      "id": "process-calendar-trigger",
+      "name": "Process Calendar Trigger",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 960],
+      "notes": "Processes Google Calendar meeting created event.\nExtracts attendee email to identify the lead."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle meeting booked - stop sequences and send confirmation\nconst input = $input.first().json;\n\n// Override sequence to post_meeting\nreturn {\n  ...input,\n  sequenceName: 'post_meeting',\n  currentStep: 1,\n  eventType: 'meeting_booked',\n  shouldStopOtherSequences: true,\n  note: 'Meeting booked - stopping other sequences and sending confirmation'\n};"
+      },
+      "id": "handle-meeting-booked",
+      "name": "Handle Meeting Booked",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 420],
+      "notes": "When meeting is booked:\n1. Stops all active sequences for this lead\n2. Starts Post-Meeting Confirmation sequence"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge paths for sending channels\nconst input = $input.first().json;\n\n// Get the send result from the previous node\nconst sendResult = {\n  success: true,\n  channel: input.llmContext?.useSms ? 'sms' : 'email',\n  sentAt: new Date().toISOString()\n};\n\nreturn {\n  ...input,\n  sendResult,\n  actionTaken: 'sent',\n  channel: sendResult.channel\n};"
+      },
+      "id": "merge-send-result",
+      "name": "Merge Send Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [5280, 200],
+      "notes": "Merges send results from different channels.\nPrepares data for logging."
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "leadId",
+              "value": "test_lead_001"
+            },
+            {
+              "name": "email",
+              "value": "test@example.com"
+            },
+            {
+              "name": "first_name",
+              "value": "Alex"
+            },
+            {
+              "name": "last_name",
+              "value": "Johnson"
+            },
+            {
+              "name": "company",
+              "value": "Acme Corp"
+            },
+            {
+              "name": "role",
+              "value": "Marketing Manager"
+            },
+            {
+              "name": "phone",
+              "value": "+15551234567"
+            },
+            {
+              "name": "status",
+              "value": "lead"
+            },
+            {
+              "name": "lead_source",
+              "value": "Website Form"
+            },
+            {
+              "name": "last_activity_type",
+              "value": "form_submission"
+            },
+            {
+              "name": "event_type",
+              "value": "new_lead"
+            }
+          ],
+          "boolean": [
+            {
+              "name": "opt_out",
+              "value": false
+            },
+            {
+              "name": "consent_sms",
+              "value": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "test-lead-data",
+      "name": "Test Lead Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 180],
+      "notes": "Sample test lead for manual testing.\nModify these values to test different scenarios:\n• Change event_type to test different triggers\n• Set opt_out=true to test stop conditions\n• Remove first_name to test low confidence"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log stop/skip reasons\nconst input = $input.first().json;\n\nlet reason = 'unknown';\nlet actionTaken = 'skipped';\n\nif (input.stopCheck?.shouldStop) {\n  reason = input.stopCheck.stopReasons.join('; ');\n  actionTaken = 'blocked_stop_condition';\n}\n\nif (input.dedupeCheck?.isDuplicate) {\n  reason = input.dedupeCheck.reason;\n  actionTaken = 'skipped_duplicate';\n}\n\nif (input.rateLimitCheck?.exceedsLimit) {\n  reason = input.rateLimitCheck.reason;\n  actionTaken = 'skipped_rate_limit';\n}\n\nreturn {\n  ...input,\n  actionTaken,\n  error: reason,\n  channel: 'none'\n};"
+      },
+      "id": "log-skip-reason",
+      "name": "Log Skip Reason",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3300, 640],
+      "notes": "Prepares skip reason for logging when:\n• Stop conditions met\n• Duplicate detected\n• Rate limit exceeded"
+    },
+    {
+      "parameters": {},
+      "id": "noop-disabled",
+      "name": "Sequences Disabled",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1320, 720],
+      "notes": "No action when sequences are disabled.\nCan connect to logging if needed."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Schedule next step in sequence\nconst input = $input.first().json;\nconst sequences = JSON.parse($('Set Sequences & Value Props').first().json.sequences);\nconst sequence = sequences[input.sequenceName];\nconst currentStep = input.currentStep || 1;\n\n// Check if there's a next step\nconst nextStep = currentStep + 1;\nconst nextStepConfig = sequence?.steps.find(s => s.step === nextStep);\n\nif (!nextStepConfig) {\n  // No more steps - sequence complete\n  return {\n    ...input,\n    sequenceComplete: true,\n    nextStep: null\n  };\n}\n\n// Calculate delay for next step\nconst delayMs = (nextStepConfig.delayDays * 24 * 60 * 60 * 1000) + \n                (nextStepConfig.delayHours * 60 * 60 * 1000);\n\nreturn {\n  ...input,\n  sequenceComplete: false,\n  nextStep: {\n    step: nextStep,\n    config: nextStepConfig,\n    delayMs,\n    scheduledFor: new Date(Date.now() + delayMs).toISOString()\n  }\n};"
+      },
+      "id": "schedule-next-step",
+      "name": "Schedule Next Step",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [5940, 300],
+      "notes": "Calculates and schedules the next step in the sequence.\nIf no more steps, marks sequence as complete."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-next-step",
+              "leftValue": "={{ $json.sequenceComplete }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-next-step",
+      "name": "Route: Has Next Step?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [6160, 300],
+      "notes": "Checks if sequence has more steps.\nIf yes, schedules the wait for next step."
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.nextStep.delayMs }}",
+        "unit": "milliseconds"
+      },
+      "id": "wait-next-step",
+      "name": "Wait: Next Step Delay",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [6380, 220],
+      "notes": "Waits for the configured delay before next step.\nDelay is defined in sequence configuration."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare for next step execution\nconst input = $input.first().json;\n\nreturn {\n  ...input,\n  currentStep: input.nextStep.step,\n  stepConfig: input.nextStep.config,\n  previousStep: input.currentStep,\n  resumedAt: new Date().toISOString()\n};"
+      },
+      "id": "prepare-next-step",
+      "name": "Prepare Next Step",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [6600, 220],
+      "notes": "Prepares context for next step execution.\nLoops back to stop condition check."
+    },
+    {
+      "parameters": {},
+      "id": "sequence-complete",
+      "name": "Sequence Complete",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [6380, 400],
+      "notes": "Sequence finished - all steps completed.\nNo further action needed."
+    }
+  ],
+  "connections": {
+    "On clicking 'Test workflow'": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Set Sequences & Value Props",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Sequences & Value Props": {
+      "main": [
+        [
+          {
+            "node": "Test Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: Lead Events": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule: Inactivity Check": {
+      "main": [
+        [
+          {
+            "node": "Process Inactivity Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Inactivity Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Calendar: Meeting Booked": {
+      "main": [
+        [
+          {
+            "node": "Process Calendar Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Calendar Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Route: Trigger Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Trigger Type": {
+      "main": [
+        [
+          {
+            "node": "Handle Meeting Booked",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check: Sequences Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Meeting Booked": {
+      "main": [
+        [
+          {
+            "node": "Check: Sequences Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check: Sequences Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Check Stop Conditions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sequences Disabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Stop Conditions": {
+      "main": [
+        [
+          {
+            "node": "Route: Should Stop?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Should Stop?": {
+      "main": [
+        [
+          {
+            "node": "Log Skip Reason",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Quiet Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Quiet Hours": {
+      "main": [
+        [
+          {
+            "node": "Route: In Quiet Hours?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: In Quiet Hours?": {
+      "main": [
+        [
+          {
+            "node": "Wait: Until Quiet Hours End",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Dedupe Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait: Until Quiet Hours End": {
+      "main": [
+        [
+          {
+            "node": "Prepare Dedupe Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Dedupe Key": {
+      "main": [
+        [
+          {
+            "node": "Sheets: Dedupe Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets: Dedupe Lookup": {
+      "main": [
+        [
+          {
+            "node": "Process Dedupe Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Dedupe Result": {
+      "main": [
+        [
+          {
+            "node": "Route: Is Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Is Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Log Skip Reason",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Route: Exceeds Rate Limit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Exceeds Rate Limit?": {
+      "main": [
+        [
+          {
+            "node": "Log Skip Reason",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare LLM Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Skip Reason": {
+      "main": [
+        [
+          {
+            "node": "Prepare Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare LLM Context": {
+      "main": [
+        [
+          {
+            "node": "OpenAI: Generate Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI: Generate Message": {
+      "main": [
+        [
+          {
+            "node": "Parse LLM Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse LLM Response": {
+      "main": [
+        [
+          {
+            "node": "Route: Compliance OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Compliance OK?": {
+      "main": [
+        [
+          {
+            "node": "Route: Confidence OK?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify: Compliance Block",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Confidence OK?": {
+      "main": [
+        [
+          {
+            "node": "Route: Email or SMS?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify: Low Confidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify: Low Confidence": {
+      "main": [
+        [
+          {
+            "node": "Route: Email or SMS?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify: Compliance Block": {
+      "main": [
+        [
+          {
+            "node": "Prepare Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Email or SMS?": {
+      "main": [
+        [
+          {
+            "node": "Check: Test Mode? (SMS)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check: Test Mode? (Email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check: Test Mode? (Email)": {
+      "main": [
+        [
+          {
+            "node": "Gmail: Send Test Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail: Send Live Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check: Test Mode? (SMS)": {
+      "main": [
+        [
+          {
+            "node": "Gmail: SMS Test Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Twilio: Send SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: Send Test Email": {
+      "main": [
+        [
+          {
+            "node": "Merge Send Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: Send Live Email": {
+      "main": [
+        [
+          {
+            "node": "Merge Send Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: SMS Test Notification": {
+      "main": [
+        [
+          {
+            "node": "Merge Send Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twilio: Send SMS": {
+      "main": [
+        [
+          {
+            "node": "Merge Send Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Send Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Log Entry": {
+      "main": [
+        [
+          {
+            "node": "Sheets: Log Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets: Log Action": {
+      "main": [
+        [
+          {
+            "node": "Schedule Next Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Next Step": {
+      "main": [
+        [
+          {
+            "node": "Route: Has Next Step?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Has Next Step?": {
+      "main": [
+        [
+          {
+            "node": "Wait: Next Step Delay",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sequence Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait: Next Step Delay": {
+      "main": [
+        [
+          {
+            "node": "Prepare Next Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Next Step": {
+      "main": [
+        [
+          {
+            "node": "Check Stop Conditions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "AI Agent",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "Follow-up Automation",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "Sales",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 3,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
