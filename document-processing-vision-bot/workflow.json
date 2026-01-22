@@ -1,0 +1,1482 @@
+{
+  "name": "Document Processing Bot (Vision AI Edition)",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "includeSpamTrash": false,
+          "labelIds": [
+            "={{ $json.config?.inboxLabel || 'DocBot/Inbox' }}"
+          ],
+          "q": "has:attachment"
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "id": "trigger-gmail",
+      "name": "Gmail Trigger - Watch DocBot/Inbox",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      },
+      "notes": "SETUP STEP 1: Connect your Gmail account here.\n\n1. Click this node\n2. Click 'Credential to connect with'\n3. Click 'Create new credential'\n4. Sign in with your Google account\n5. Grant access to Gmail\n\nThis node watches for emails with the label 'DocBot/Inbox' that have attachments.\n\nBEFORE RUNNING: Create a Gmail label called 'DocBot/Inbox' and optionally set up a filter to auto-apply it to emails you want processed."
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "rootFolderId",
+              "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID_HERE"
+            },
+            {
+              "name": "spreadsheetId",
+              "value": "YOUR_GOOGLE_SHEETS_ID_HERE"
+            },
+            {
+              "name": "sheetName",
+              "value": "Document Log"
+            },
+            {
+              "name": "notificationEmail",
+              "value": "your-email@example.com"
+            },
+            {
+              "name": "inboxLabel",
+              "value": "DocBot/Inbox"
+            },
+            {
+              "name": "processedLabel",
+              "value": "DocBot/Processed"
+            },
+            {
+              "name": "categories",
+              "value": "Invoice,Receipt,Contract,Other"
+            }
+          ],
+          "number": [
+            {
+              "name": "confidenceThreshold",
+              "value": 0.7
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Set Config - EDIT THIS FIRST",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        20,
+        300
+      ],
+      "notes": "SETUP STEP 2: Configure your settings here!\n\n1. rootFolderId: Go to Google Drive, open your 'Processed Documents' folder, copy the ID from the URL (the long string after /folders/)\n\n2. spreadsheetId: Create a Google Sheet, copy the ID from the URL (between /d/ and /edit)\n\n3. sheetName: Name of the tab in your sheet (default: Document Log)\n\n4. notificationEmail: Where to send alerts\n\n5. confidenceThreshold: 0.70 means 70% confidence required (lower = more alerts)\n\n6. categories: Comma-separated list of document types"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "email-id",
+              "name": "emailId",
+              "value": "={{ $('Gmail Trigger - Watch DocBot/Inbox').item.json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "email-subject",
+              "name": "emailSubject",
+              "value": "={{ $('Gmail Trigger - Watch DocBot/Inbox').item.json.subject || '(No Subject)' }}",
+              "type": "string"
+            },
+            {
+              "id": "email-from",
+              "name": "emailFrom",
+              "value": "={{ $('Gmail Trigger - Watch DocBot/Inbox').item.json.from?.emailAddress || $('Gmail Trigger - Watch DocBot/Inbox').item.json.from || 'Unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "email-date",
+              "name": "emailReceivedDate",
+              "value": "={{ $('Gmail Trigger - Watch DocBot/Inbox').item.json.date || new Date().toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "thread-id",
+              "name": "threadId",
+              "value": "={{ $('Gmail Trigger - Watch DocBot/Inbox').item.json.threadId }}",
+              "type": "string"
+            },
+            {
+              "id": "config-root",
+              "name": "config_rootFolderId",
+              "value": "={{ $('Set Config - EDIT THIS FIRST').item.json.rootFolderId }}",
+              "type": "string"
+            },
+            {
+              "id": "config-sheet",
+              "name": "config_spreadsheetId",
+              "value": "={{ $('Set Config - EDIT THIS FIRST').item.json.spreadsheetId }}",
+              "type": "string"
+            },
+            {
+              "id": "config-sheetname",
+              "name": "config_sheetName",
+              "value": "={{ $('Set Config - EDIT THIS FIRST').item.json.sheetName }}",
+              "type": "string"
+            },
+            {
+              "id": "config-notify",
+              "name": "config_notificationEmail",
+              "value": "={{ $('Set Config - EDIT THIS FIRST').item.json.notificationEmail }}",
+              "type": "string"
+            },
+            {
+              "id": "config-threshold",
+              "name": "config_confidenceThreshold",
+              "value": "={{ $('Set Config - EDIT THIS FIRST').item.json.confidenceThreshold }}",
+              "type": "number"
+            },
+            {
+              "id": "config-processed",
+              "name": "config_processedLabel",
+              "value": "={{ $('Set Config - EDIT THIS FIRST').item.json.processedLabel }}",
+              "type": "string"
+            },
+            {
+              "id": "config-inbox",
+              "name": "config_inboxLabel",
+              "value": "={{ $('Set Config - EDIT THIS FIRST').item.json.inboxLabel }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-email-info",
+      "name": "Extract Email Info",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        300
+      ],
+      "notes": "This node extracts email details (subject, from, date) and carries forward the configuration settings.\n\nNo changes needed here - it works automatically."
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-attachments",
+      "name": "Split Attachments",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        460,
+        300
+      ],
+      "notes": "Processes each attachment one at a time.\n\nIf an email has 3 attachments, this will loop 3 times - once for each file.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "filename",
+              "name": "originalFilename",
+              "value": "={{ $binary?.attachment?.fileName || $binary?.data?.fileName || 'unknown_file' }}",
+              "type": "string"
+            },
+            {
+              "id": "mimetype",
+              "name": "mimeType",
+              "value": "={{ $binary?.attachment?.mimeType || $binary?.data?.mimeType || 'application/octet-stream' }}",
+              "type": "string"
+            },
+            {
+              "id": "filesize",
+              "name": "fileSize",
+              "value": "={{ $binary?.attachment?.fileSize || $binary?.data?.fileSize || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "is-image",
+              "name": "isImage",
+              "value": "={{ ($binary?.attachment?.mimeType || $binary?.data?.mimeType || '').startsWith('image/') }}",
+              "type": "boolean"
+            },
+            {
+              "id": "is-pdf",
+              "name": "isPdf",
+              "value": "={{ ($binary?.attachment?.mimeType || $binary?.data?.mimeType || '') === 'application/pdf' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "dedupe-key",
+              "name": "dedupeKey",
+              "value": "={{ $json.emailId + '_' + ($binary?.attachment?.fileName || $binary?.data?.fileName || 'unknown') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-attachment-info",
+      "name": "Prepare Attachment Info",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        680,
+        300
+      ],
+      "notes": "Extracts information about the current attachment:\n- Filename\n- File type (PDF or image)\n- Creates a unique key for duplicate detection\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "is-processable",
+              "leftValue": "={{ $json.isImage || $json.isPdf }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-supported-files",
+      "name": "Filter Supported Files",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ],
+      "notes": "Only processes PDF and image files.\n\nOther file types (Word docs, Excel, etc.) are skipped.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {
+          "maxTokens": 4096,
+          "temperature": 0.1
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a document processing AI that extracts structured data from invoices, receipts, and contracts. You MUST respond with ONLY valid JSON - no markdown, no explanations, no text before or after the JSON.\n\nAnalyze this document image and extract the following information. Return EXACTLY this JSON structure:\n\n{\n  \"category\": \"Invoice|Receipt|Contract|Other\",\n  \"vendor\": \"string or null\",\n  \"document_date\": \"YYYY-MM-DD or null\",\n  \"total_amount\": 0.00,\n  \"currency\": \"USD|EUR|GBP|CAD|AUD|JPY|CNY|INR|CHF|null\",\n  \"line_items\": [\n    {\n      \"description\": \"string\",\n      \"quantity\": 1.0,\n      \"unit_price\": 0.00,\n      \"amount\": 0.00\n    }\n  ],\n  \"confidence\": 0.00,\n  \"missing_fields\": [],\n  \"notes\": \"string\"\n}\n\nRULES:\n1. category: Choose Invoice, Receipt, Contract, or Other based on document type\n2. vendor: The business/company name issuing the document. Use null if unclear.\n3. document_date: The invoice/receipt/contract date in YYYY-MM-DD format. If multiple dates exist, prefer the main document date. Use null if unclear.\n4. total_amount: The final total as a number (no currency symbols). Use 0 if unknown.\n5. currency: Three-letter currency code. Use null if unknown.\n6. line_items: Array of items/services. Empty array if none found.\n7. confidence: Your confidence score from 0.0 to 1.0 that the extraction is correct.\n8. missing_fields: Array of field names that could not be extracted. Must be empty array [] if all fields found.\n9. notes: Brief note about document quality or extraction issues.\n\nIMPORTANT:\n- Return ONLY the JSON object, nothing else\n- All numbers must be actual numbers, not strings\n- Dates must be YYYY-MM-DD format\n- If a field cannot be determined, use null and add it to missing_fields\n- For receipts without line items, still try to capture the total",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'Extract data from this ' + ($json.isPdf ? 'PDF document' : 'image') + '. Filename: ' + $json.originalFilename }}",
+              "role": "user"
+            }
+          ]
+        },
+        "requestOptions": {}
+      },
+      "id": "openai-vision",
+      "name": "OpenAI Vision - Extract Document Data",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        1120,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      },
+      "notes": "SETUP STEP 3: Connect your OpenAI account here.\n\n1. Click this node\n2. Click 'Credential to connect with'\n3. Click 'Create new credential'\n4. Paste your OpenAI API key\n5. Save\n\nThis uses GPT-4o to 'look at' the document like a human would.\n\nNOTE: You need an OpenAI account with API access and credits. GPT-4o costs about $0.01-0.03 per document.\n\nTo use GPT-4o-mini instead (cheaper), change the Model dropdown."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the OpenAI response and validate the JSON structure\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  try {\n    // Get the response text from OpenAI\n    let responseText = item.json.message?.content || item.json.text || item.json.output || '';\n    \n    // Clean up the response - remove markdown code blocks if present\n    responseText = responseText.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/\\s*```$/i, '').trim();\n    \n    // Parse the JSON\n    let extracted;\n    try {\n      extracted = JSON.parse(responseText);\n    } catch (parseError) {\n      // If parsing fails, create a default structure\n      extracted = {\n        category: 'Other',\n        vendor: null,\n        document_date: null,\n        total_amount: 0,\n        currency: null,\n        line_items: [],\n        confidence: 0.1,\n        missing_fields: ['vendor', 'document_date', 'total_amount'],\n        notes: 'Failed to parse AI response: ' + parseError.message\n      };\n    }\n    \n    // Validate and normalize the extracted data\n    const normalized = {\n      category: ['Invoice', 'Receipt', 'Contract', 'Other'].includes(extracted.category) ? extracted.category : 'Other',\n      vendor: extracted.vendor || null,\n      document_date: extracted.document_date || null,\n      total_amount: typeof extracted.total_amount === 'number' ? extracted.total_amount : parseFloat(extracted.total_amount) || 0,\n      currency: extracted.currency || null,\n      line_items: Array.isArray(extracted.line_items) ? extracted.line_items : [],\n      confidence: typeof extracted.confidence === 'number' ? Math.min(1, Math.max(0, extracted.confidence)) : 0.5,\n      missing_fields: Array.isArray(extracted.missing_fields) ? extracted.missing_fields : [],\n      notes: extracted.notes || ''\n    };\n    \n    // Determine required fields based on category\n    let requiredFields = [];\n    if (normalized.category === 'Invoice' || normalized.category === 'Receipt') {\n      requiredFields = ['vendor', 'document_date', 'total_amount'];\n    } else if (normalized.category === 'Contract') {\n      requiredFields = ['vendor', 'document_date'];\n    }\n    \n    // Check for missing required fields\n    const actualMissingFields = [];\n    for (const field of requiredFields) {\n      if (normalized[field] === null || normalized[field] === undefined || normalized[field] === '' || (field === 'total_amount' && normalized[field] === 0)) {\n        if (!actualMissingFields.includes(field)) {\n          actualMissingFields.push(field);\n        }\n      }\n    }\n    \n    // Merge with AI-reported missing fields\n    for (const field of normalized.missing_fields) {\n      if (!actualMissingFields.includes(field)) {\n        actualMissingFields.push(field);\n      }\n    }\n    normalized.missing_fields = actualMissingFields;\n    \n    // Carry forward all previous data\n    results.push({\n      json: {\n        ...item.json,\n        extracted: normalized,\n        extractionRaw: responseText\n      },\n      binary: item.binary\n    });\n    \n  } catch (error) {\n    // On any error, create error result\n    results.push({\n      json: {\n        ...item.json,\n        extracted: {\n          category: 'Other',\n          vendor: null,\n          document_date: null,\n          total_amount: 0,\n          currency: null,\n          line_items: [],\n          confidence: 0,\n          missing_fields: ['vendor', 'document_date', 'total_amount'],\n          notes: 'Extraction error: ' + error.message\n        },\n        extractionError: error.message\n      },\n      binary: item.binary\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "parse-extraction",
+      "name": "Parse and Validate Extraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ],
+      "notes": "Parses the AI response and validates the JSON structure.\n\nAlso checks for missing required fields based on document type.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Determine the document year and build the folder path/filename\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const extracted = item.json.extracted;\n  const originalFilename = item.json.originalFilename || 'document';\n  \n  // Determine year from document_date or email received date\n  let year;\n  if (extracted.document_date) {\n    year = extracted.document_date.substring(0, 4);\n  } else {\n    const receivedDate = new Date(item.json.emailReceivedDate || new Date());\n    year = receivedDate.getFullYear().toString();\n  }\n  \n  // Build the filename: <YYYY-MM-DD>_<Category>_<Vendor>_<Total>_<OriginalFilename>\n  const dateStr = extracted.document_date || new Date().toISOString().substring(0, 10);\n  const category = extracted.category || 'Other';\n  const vendor = extracted.vendor || 'Unknown';\n  const total = extracted.total_amount > 0 ? extracted.total_amount.toFixed(2) : '0.00';\n  \n  // Sanitize for filename (remove special characters)\n  const sanitize = (str) => str.replace(/[<>:\"/\\\\|?*]/g, '_').replace(/\\s+/g, '_').substring(0, 50);\n  \n  // Get original extension\n  const extMatch = originalFilename.match(/\\.[^.]+$/);\n  const extension = extMatch ? extMatch[0] : '';\n  const baseName = originalFilename.replace(/\\.[^.]+$/, '');\n  \n  const newFilename = `${dateStr}_${sanitize(category)}_${sanitize(vendor)}_${total}_${sanitize(baseName)}${extension}`;\n  \n  // Determine status based on confidence and missing fields\n  const threshold = item.json.config_confidenceThreshold || 0.7;\n  const hasMissingRequired = extracted.missing_fields.length > 0;\n  const isLowConfidence = extracted.confidence < threshold;\n  const isOtherCategory = extracted.category === 'Other';\n  const hasError = item.json.extractionError ? true : false;\n  \n  let status;\n  let needsNotification = false;\n  let notificationReason = [];\n  \n  if (hasError) {\n    status = 'Error';\n    needsNotification = true;\n    notificationReason.push('Extraction error occurred');\n  } else if (isLowConfidence || isOtherCategory || hasMissingRequired) {\n    status = 'Needs Review';\n    needsNotification = true;\n    if (isLowConfidence) notificationReason.push(`Low confidence (${(extracted.confidence * 100).toFixed(0)}%)`);\n    if (isOtherCategory) notificationReason.push('Categorized as Other');\n    if (hasMissingRequired) notificationReason.push(`Missing fields: ${extracted.missing_fields.join(', ')}`);\n  } else {\n    status = 'Processed';\n  }\n  \n  results.push({\n    json: {\n      ...item.json,\n      year: year,\n      category: category,\n      newFilename: newFilename,\n      status: status,\n      needsNotification: needsNotification,\n      notificationReason: notificationReason.join('; ')\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "determine-year-status",
+      "name": "Determine Year and Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        300
+      ],
+      "notes": "Calculates:\n- The year for folder organization (from document date or email date)\n- The new filename with date, category, vendor, and amount\n- The status (Processed, Needs Review, or Error)\n- Whether a notification is needed\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "oAuth2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "='\"' + $json.config_rootFolderId + '\" in parents and name = \"' + $json.category + '\" and mimeType = \"application/vnd.google-apps.folder\" and trashed = false'"
+            },
+            {
+              "name": "fields",
+              "value": "files(id,name)"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "search-category-folder",
+      "name": "Search Category Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive account"
+        }
+      },
+      "notes": "SETUP STEP 4: Connect your Google Drive account here.\n\nSearches for the category folder (e.g., 'Invoice') inside your root folder.\n\n1. Click this node\n2. Click 'Credential to connect with'\n3. Select your Google Drive credential (same as Gmail usually)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "folder-exists",
+              "leftValue": "={{ $json.files?.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-category-exists",
+      "name": "Category Folder Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        300
+      ],
+      "notes": "Checks if the category folder already exists.\n\nIf yes: use it\nIf no: create it\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "resource": "folder",
+        "folderName": "={{ $('Determine Year and Status').item.json.category }}",
+        "options": {
+          "parentFolderId": "={{ $('Determine Year and Status').item.json.config_rootFolderId }}"
+        }
+      },
+      "id": "create-category-folder",
+      "name": "Create Category Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2220,
+        400
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive account"
+        }
+      },
+      "notes": "Creates the category folder if it does not exist.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "category-folder-id",
+              "name": "categoryFolderId",
+              "value": "={{ $json.files?.[0]?.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "use-existing-category",
+      "name": "Use Existing Category Folder",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2220,
+        200
+      ],
+      "notes": "Uses the existing category folder ID.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "category-folder-id-new",
+              "name": "categoryFolderId",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-new-category-id",
+      "name": "Set New Category Folder ID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2440,
+        400
+      ],
+      "notes": "Captures the newly created category folder ID.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": []
+        },
+        "options": {}
+      },
+      "id": "merge-category-paths",
+      "name": "Merge Category Paths",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2660,
+        300
+      ],
+      "notes": "Combines the two paths (folder existed vs created).\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "oAuth2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "='\"' + $json.categoryFolderId + '\" in parents and name = \"' + $('Determine Year and Status').item.json.year + '\" and mimeType = \"application/vnd.google-apps.folder\" and trashed = false'"
+            },
+            {
+              "name": "fields",
+              "value": "files(id,name)"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "search-year-folder",
+      "name": "Search Year Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2880,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive account"
+        }
+      },
+      "notes": "Searches for the year folder (e.g., '2024') inside the category folder.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "year-exists",
+              "leftValue": "={{ $json.files?.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-year-exists",
+      "name": "Year Folder Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3100,
+        300
+      ],
+      "notes": "Checks if the year folder already exists.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "resource": "folder",
+        "folderName": "={{ $('Determine Year and Status').item.json.year }}",
+        "options": {
+          "parentFolderId": "={{ $('Merge Category Paths').item.json.categoryFolderId }}"
+        }
+      },
+      "id": "create-year-folder",
+      "name": "Create Year Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        3320,
+        400
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive account"
+        }
+      },
+      "notes": "Creates the year folder if it does not exist.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "year-folder-id",
+              "name": "yearFolderId",
+              "value": "={{ $json.files?.[0]?.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "use-existing-year",
+      "name": "Use Existing Year Folder",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3320,
+        200
+      ],
+      "notes": "Uses the existing year folder ID.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "year-folder-id-new",
+              "name": "yearFolderId",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-new-year-id",
+      "name": "Set New Year Folder ID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3540,
+        400
+      ],
+      "notes": "Captures the newly created year folder ID.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": []
+        },
+        "options": {}
+      },
+      "id": "merge-year-paths",
+      "name": "Merge Year Paths",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        3760,
+        300
+      ],
+      "notes": "Combines the two paths (folder existed vs created).\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "={{ $('Determine Year and Status').item.json.newFilename }}",
+        "folderId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.yearFolderId }}"
+        },
+        "options": {}
+      },
+      "id": "upload-to-drive",
+      "name": "Upload File to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        3980,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive account"
+        }
+      },
+      "notes": "Uploads the document to Google Drive with the new filename.\n\nThe file will be in: Processed Documents > Category > Year > filename\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build the row for Google Sheets logging\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  // Get all the data we need\n  const prevData = $('Determine Year and Status').item.json;\n  const extracted = prevData.extracted;\n  const driveFile = item.json;\n  \n  // Build the Drive URL\n  const driveUrl = driveFile.webViewLink || driveFile.webContentLink || \n    (driveFile.id ? `https://drive.google.com/file/d/${driveFile.id}/view` : '');\n  \n  // Format the log row\n  const logRow = {\n    received_timestamp: new Date(prevData.emailReceivedDate || new Date()).toISOString(),\n    email_subject: prevData.emailSubject || '',\n    from_address: prevData.emailFrom || '',\n    original_filename: prevData.originalFilename || '',\n    category: extracted.category || 'Other',\n    vendor: extracted.vendor || '',\n    document_date: extracted.document_date || '',\n    total_amount: extracted.total_amount || 0,\n    currency: extracted.currency || '',\n    line_items_count: extracted.line_items?.length || 0,\n    confidence: extracted.confidence || 0,\n    missing_fields: extracted.missing_fields?.join(', ') || '',\n    drive_file_url: driveUrl,\n    status: prevData.status || 'Unknown',\n    notes: extracted.notes || '',\n    dedupe_key: prevData.dedupeKey || ''\n  };\n  \n  results.push({\n    json: {\n      ...prevData,\n      logRow: logRow,\n      driveUrl: driveUrl,\n      driveFileId: driveFile.id\n    },\n    binary: item.binary\n  });\n}\n\nreturn results;"
+      },
+      "id": "build-log-row",
+      "name": "Build Log Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4200,
+        300
+      ],
+      "notes": "Prepares the data row for Google Sheets.\n\nIncludes all extracted fields plus the Drive URL.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Determine Year and Status').item.json.config_spreadsheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Determine Year and Status').item.json.config_sheetName }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Received Timestamp": "={{ $json.logRow.received_timestamp }}",
+            "Email Subject": "={{ $json.logRow.email_subject }}",
+            "From Address": "={{ $json.logRow.from_address }}",
+            "Original Filename": "={{ $json.logRow.original_filename }}",
+            "Category": "={{ $json.logRow.category }}",
+            "Vendor": "={{ $json.logRow.vendor }}",
+            "Document Date": "={{ $json.logRow.document_date }}",
+            "Total Amount": "={{ $json.logRow.total_amount }}",
+            "Currency": "={{ $json.logRow.currency }}",
+            "Line Items Count": "={{ $json.logRow.line_items_count }}",
+            "Confidence": "={{ $json.logRow.confidence }}",
+            "Missing Fields": "={{ $json.logRow.missing_fields }}",
+            "Drive File URL": "={{ $json.logRow.drive_file_url }}",
+            "Status": "={{ $json.logRow.status }}",
+            "Notes": "={{ $json.logRow.notes }}",
+            "Dedupe Key": "={{ $json.logRow.dedupe_key }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Received Timestamp",
+              "displayName": "Received Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email Subject",
+              "displayName": "Email Subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "From Address",
+              "displayName": "From Address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Original Filename",
+              "displayName": "Original Filename",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor",
+              "displayName": "Vendor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Document Date",
+              "displayName": "Document Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total Amount",
+              "displayName": "Total Amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Currency",
+              "displayName": "Currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Line Items Count",
+              "displayName": "Line Items Count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Confidence",
+              "displayName": "Confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Missing Fields",
+              "displayName": "Missing Fields",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Drive File URL",
+              "displayName": "Drive File URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Dedupe Key",
+              "displayName": "Dedupe Key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "append-to-sheets",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4420,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "notes": "SETUP STEP 5: Connect your Google Sheets account here.\n\nBEFORE RUNNING:\n1. Create a Google Sheet\n2. Name the first tab 'Document Log'\n3. Add these column headers in row 1:\n   Received Timestamp | Email Subject | From Address | Original Filename | Category | Vendor | Document Date | Total Amount | Currency | Line Items Count | Confidence | Missing Fields | Drive File URL | Status | Notes | Dedupe Key\n\n4. Copy the spreadsheet ID from the URL and paste it in the 'Set Config' node"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "needs-notify",
+              "leftValue": "={{ $json.needsNotification }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-needs-notification",
+      "name": "Needs Notification?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4640,
+        300
+      ],
+      "notes": "Checks if we need to send an alert email.\n\nAlerts are sent for:\n- Low confidence\n- Missing required fields\n- Category is 'Other'\n- Processing errors\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Determine Year and Status').item.json.config_notificationEmail }}",
+        "subject": "=DocBot Alert: {{ $('Determine Year and Status').item.json.status }} - {{ $('Determine Year and Status').item.json.originalFilename }}",
+        "message": "=Document Processing Alert\n================================\n\nStatus: {{ $('Determine Year and Status').item.json.status }}\nReason: {{ $('Determine Year and Status').item.json.notificationReason }}\n\nEmail Details:\n- Subject: {{ $('Determine Year and Status').item.json.emailSubject }}\n- From: {{ $('Determine Year and Status').item.json.emailFrom }}\n- Attachment: {{ $('Determine Year and Status').item.json.originalFilename }}\n\nExtracted Data:\n{{ JSON.stringify($('Determine Year and Status').item.json.extracted, null, 2) }}\n\nDrive File: {{ $json.driveUrl || 'Not uploaded' }}\n\n================================\nWhat to do next:\n\n1. Open the Drive file link above to review the document\n2. Check the Google Sheet 'Document Log' for this entry\n3. If the extraction is wrong, manually update the sheet row\n4. If this type of document is common, consider adjusting the AI prompt\n\nThis alert was sent by your Document Processing Bot.",
+        "options": {}
+      },
+      "id": "send-notification",
+      "name": "Send Alert Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        4860,
+        200
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      },
+      "notes": "Sends an alert email when review is needed.\n\nUses the same Gmail credential as the trigger.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Determine Year and Status').item.json.emailId }}",
+        "labelIds": [
+          "={{ $('Determine Year and Status').item.json.config_processedLabel }}"
+        ]
+      },
+      "id": "add-processed-label",
+      "name": "Add Processed Label",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        5080,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      },
+      "notes": "Adds the 'DocBot/Processed' label to the email.\n\nBEFORE RUNNING: Create a Gmail label called 'DocBot/Processed'\n\nNo other changes needed here."
+    },
+    {
+      "parameters": {
+        "operation": "removeLabels",
+        "messageId": "={{ $('Determine Year and Status').item.json.emailId }}",
+        "labelIds": [
+          "={{ $('Determine Year and Status').item.json.config_inboxLabel }}"
+        ]
+      },
+      "id": "remove-inbox-label",
+      "name": "Remove Inbox Label",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        5300,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      },
+      "notes": "Removes the 'DocBot/Inbox' label so the email is not processed again.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {},
+      "id": "loop-back",
+      "name": "Process Next Attachment",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        5520,
+        300
+      ],
+      "notes": "Loops back to process the next attachment if the email has multiple.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "skip-note",
+              "name": "skipped",
+              "value": "true",
+              "type": "string"
+            },
+            {
+              "id": "skip-reason",
+              "name": "skipReason",
+              "value": "File type not supported (not PDF or image)",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "skip-unsupported",
+      "name": "Skip Unsupported File",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        500
+      ],
+      "notes": "Skips files that are not PDF or images.\n\nFiles like .docx, .xlsx, .zip are not processed.\n\nNo changes needed here."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config - EDIT THIS FIRST').item.json.notificationEmail }}",
+        "subject": "=DocBot Error: Workflow Failed",
+        "message": "=Document Processing Bot encountered an error.\n\nError Details:\n{{ $json.error?.message || 'Unknown error' }}\n\nPlease check your n8n workflow execution logs for more details.\n\nCommon issues:\n- Google API quota exceeded\n- OpenAI API credits exhausted\n- Invalid folder or spreadsheet ID\n- Missing credentials\n\nTo fix:\n1. Open n8n\n2. Go to Executions\n3. Find the failed execution\n4. Check which node failed and why",
+        "options": {}
+      },
+      "id": "error-notification",
+      "name": "Error Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        4860,
+        500
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      },
+      "notes": "Sends an error notification if the workflow fails.\n\nThis is connected to the error output of critical nodes.\n\nNo changes needed here."
+    }
+  ],
+  "connections": {
+    "Gmail Trigger - Watch DocBot/Inbox": {
+      "main": [
+        [
+          {
+            "node": "Set Config - EDIT THIS FIRST",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - EDIT THIS FIRST": {
+      "main": [
+        [
+          {
+            "node": "Extract Email Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Email Info": {
+      "main": [
+        [
+          {
+            "node": "Split Attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Attachments": {
+      "main": [
+        [
+          {
+            "node": "Prepare Attachment Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Attachment Info": {
+      "main": [
+        [
+          {
+            "node": "Filter Supported Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Supported Files": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Vision - Extract Document Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Unsupported File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Vision - Extract Document Data": {
+      "main": [
+        [
+          {
+            "node": "Parse and Validate Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse and Validate Extraction": {
+      "main": [
+        [
+          {
+            "node": "Determine Year and Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determine Year and Status": {
+      "main": [
+        [
+          {
+            "node": "Search Category Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Category Folder": {
+      "main": [
+        [
+          {
+            "node": "Category Folder Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Category Folder Exists?": {
+      "main": [
+        [
+          {
+            "node": "Use Existing Category Folder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Category Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Existing Category Folder": {
+      "main": [
+        [
+          {
+            "node": "Merge Category Paths",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Category Folder": {
+      "main": [
+        [
+          {
+            "node": "Set New Category Folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set New Category Folder ID": {
+      "main": [
+        [
+          {
+            "node": "Merge Category Paths",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Category Paths": {
+      "main": [
+        [
+          {
+            "node": "Search Year Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Year Folder": {
+      "main": [
+        [
+          {
+            "node": "Year Folder Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Year Folder Exists?": {
+      "main": [
+        [
+          {
+            "node": "Use Existing Year Folder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Year Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Existing Year Folder": {
+      "main": [
+        [
+          {
+            "node": "Merge Year Paths",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Year Folder": {
+      "main": [
+        [
+          {
+            "node": "Set New Year Folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set New Year Folder ID": {
+      "main": [
+        [
+          {
+            "node": "Merge Year Paths",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Year Paths": {
+      "main": [
+        [
+          {
+            "node": "Upload File to Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload File to Drive": {
+      "main": [
+        [
+          {
+            "node": "Build Log Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Log Row": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Needs Notification?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Notification?": {
+      "main": [
+        [
+          {
+            "node": "Send Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add Processed Label",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Alert Email": {
+      "main": [
+        [
+          {
+            "node": "Add Processed Label",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Processed Label": {
+      "main": [
+        [
+          {
+            "node": "Remove Inbox Label",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Inbox Label": {
+      "main": [
+        [
+          {
+            "node": "Process Next Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Next Attachment": {
+      "main": [
+        [
+          {
+            "node": "Split Attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Unsupported File": {
+      "main": [
+        [
+          {
+            "node": "Process Next Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Document Processing",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "AI Vision",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "Gmail",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
