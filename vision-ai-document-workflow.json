@@ -1,0 +1,482 @@
+{
+  "name": "Vision AI Document Processing Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "hasAttachments": true
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "config-rootFolderId",
+              "name": "rootFolderId",
+              "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID",
+              "type": "string"
+            },
+            {
+              "id": "config-spreadsheetId",
+              "name": "spreadsheetId",
+              "value": "YOUR_GOOGLE_SPREADSHEET_ID",
+              "type": "string"
+            },
+            {
+              "id": "config-sheetName",
+              "name": "sheetName",
+              "value": "Document Log",
+              "type": "string"
+            },
+            {
+              "id": "config-confidenceThreshold",
+              "name": "confidenceThreshold",
+              "value": 0.7,
+              "type": "number"
+            },
+            {
+              "id": "config-notificationEmail",
+              "name": "notificationEmail",
+              "value": "your-email@example.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {
+          "maxTokens": 4096,
+          "temperature": 0
+        }
+      },
+      "id": "openai-chat-model",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [540, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputType": "binary",
+        "binaryPropertyName": "attachment_0",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "system",
+              "message": "You are an expert Data Extraction AI. Your job is to analyze the provided image or document and extract key financial data.\nOutput ONLY valid JSON. No markdown, no conversational text.\nExtract these fields:\n- category (Invoice, Receipt, Contract, Other)\n- vendor_name (string)\n- document_date (YYYY-MM-DD)\n- total_amount (number, no symbols)\n- currency (USD, EUR, etc)\n- summary (short description)\n- confidence_score (0.0 to 1.0)\nIf a field is missing, use null."
+            },
+            {
+              "type": "user",
+              "message": "Please analyze this document and extract the financial data as specified. Return only valid JSON."
+            }
+          ]
+        },
+        "options": {
+          "returnIntermediateSteps": false
+        }
+      },
+      "id": "basic-llm-chain",
+      "name": "Vision AI Extraction",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the AI response and extract structured data\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  try {\n    // Get the AI response text\n    let aiResponse = item.json.text || item.json.response || item.json.output || '';\n    \n    // Clean up the response - remove markdown code blocks if present\n    aiResponse = aiResponse.trim();\n    \n    // Remove ```json and ``` markers if present\n    if (aiResponse.startsWith('```json')) {\n      aiResponse = aiResponse.slice(7);\n    } else if (aiResponse.startsWith('```')) {\n      aiResponse = aiResponse.slice(3);\n    }\n    \n    if (aiResponse.endsWith('```')) {\n      aiResponse = aiResponse.slice(0, -3);\n    }\n    \n    aiResponse = aiResponse.trim();\n    \n    // Parse the JSON\n    const extractedData = JSON.parse(aiResponse);\n    \n    // Validate and normalize the data\n    const normalizedData = {\n      category: extractedData.category || 'Other',\n      vendor_name: extractedData.vendor_name || null,\n      document_date: extractedData.document_date || null,\n      total_amount: extractedData.total_amount !== undefined ? Number(extractedData.total_amount) : null,\n      currency: extractedData.currency || 'USD',\n      summary: extractedData.summary || null,\n      confidence_score: extractedData.confidence_score !== undefined ? Number(extractedData.confidence_score) : 0.5,\n      raw_response: aiResponse,\n      parsing_success: true,\n      parsing_error: null\n    };\n    \n    results.push({\n      json: {\n        ...item.json,\n        extracted: normalizedData\n      },\n      binary: item.binary\n    });\n    \n  } catch (error) {\n    // Handle parsing errors gracefully\n    results.push({\n      json: {\n        ...item.json,\n        extracted: {\n          category: 'Other',\n          vendor_name: null,\n          document_date: null,\n          total_amount: null,\n          currency: null,\n          summary: null,\n          confidence_score: 0,\n          raw_response: item.json.text || item.json.response || '',\n          parsing_success: false,\n          parsing_error: error.message\n        }\n      },\n      binary: item.binary\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "code-parse-json",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Set Config').item.json.spreadsheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Set Config').item.json.sheetName }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now.format('yyyy-MM-dd HH:mm:ss') }}",
+            "Category": "={{ $json.extracted.category }}",
+            "Vendor Name": "={{ $json.extracted.vendor_name }}",
+            "Document Date": "={{ $json.extracted.document_date }}",
+            "Total Amount": "={{ $json.extracted.total_amount }}",
+            "Currency": "={{ $json.extracted.currency }}",
+            "Summary": "={{ $json.extracted.summary }}",
+            "Confidence Score": "={{ $json.extracted.confidence_score }}",
+            "Email Subject": "={{ $('Gmail Trigger').item.json.subject }}",
+            "Email From": "={{ $('Gmail Trigger').item.json.from.text }}",
+            "Parsing Success": "={{ $json.extracted.parsing_success }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Vendor Name",
+              "displayName": "Vendor Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Document Date",
+              "displayName": "Document Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Total Amount",
+              "displayName": "Total Amount",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number"
+            },
+            {
+              "id": "Currency",
+              "displayName": "Currency",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Confidence Score",
+              "displayName": "Confidence Score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number"
+            },
+            {
+              "id": "Email Subject",
+              "displayName": "Email Subject",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Email From",
+              "displayName": "Email From",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string"
+            },
+            {
+              "id": "Parsing Success",
+              "displayName": "Parsing Success",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "google-sheets-log",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [880, -100],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "driveId": {
+          "__rl": true,
+          "value": "myDrive",
+          "mode": "list"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Set Config').item.json.rootFolderId }}",
+          "mode": "id"
+        },
+        "name": "={{ $json.extracted.vendor_name || 'Unknown' }}_{{ $json.extracted.document_date || $now.format('yyyy-MM-dd') }}_{{ $json.extracted.category || 'Document' }}.pdf",
+        "binaryPropertyName": "attachment_0",
+        "options": {}
+      },
+      "id": "google-drive-upload",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [880, 100],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "confidence-check",
+              "leftValue": "={{ $json.extracted.confidence_score }}",
+              "rightValue": "={{ $('Set Config').item.json.confidenceThreshold }}",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-confidence-check",
+      "name": "Check Confidence",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').item.json.notificationEmail }}",
+        "subject": "🔍 Review Needed: Low Confidence Document Extraction",
+        "emailType": "html",
+        "message": "<h2>Document Review Required</h2>\n<p>A document was processed with a <strong>low confidence score</strong> and requires manual review.</p>\n\n<h3>Extraction Details:</h3>\n<table style=\"border-collapse: collapse; width: 100%; max-width: 600px;\">\n  <tr style=\"background-color: #f2f2f2;\">\n    <td style=\"padding: 10px; border: 1px solid #ddd;\"><strong>Category</strong></td>\n    <td style=\"padding: 10px; border: 1px solid #ddd;\">{{ $json.extracted.category }}</td>\n  </tr>\n  <tr>\n    <td style=\"padding: 10px; border: 1px solid #ddd;\"><strong>Vendor</strong></td>\n    <td style=\"padding: 10px; border: 1px solid #ddd;\">{{ $json.extracted.vendor_name || 'Not detected' }}</td>\n  </tr>\n  <tr style=\"background-color: #f2f2f2;\">\n    <td style=\"padding: 10px; border: 1px solid #ddd;\"><strong>Date</strong></td>\n    <td style=\"padding: 10px; border: 1px solid #ddd;\">{{ $json.extracted.document_date || 'Not detected' }}</td>\n  </tr>\n  <tr>\n    <td style=\"padding: 10px; border: 1px solid #ddd;\"><strong>Amount</strong></td>\n    <td style=\"padding: 10px; border: 1px solid #ddd;\">{{ $json.extracted.total_amount || 'Not detected' }} {{ $json.extracted.currency }}</td>\n  </tr>\n  <tr style=\"background-color: #ffcccc;\">\n    <td style=\"padding: 10px; border: 1px solid #ddd;\"><strong>Confidence Score</strong></td>\n    <td style=\"padding: 10px; border: 1px solid #ddd;\">{{ $json.extracted.confidence_score }} (Threshold: {{ $('Set Config').item.json.confidenceThreshold }})</td>\n  </tr>\n</table>\n\n<h3>Original Email:</h3>\n<ul>\n  <li><strong>From:</strong> {{ $('Gmail Trigger').item.json.from.text }}</li>\n  <li><strong>Subject:</strong> {{ $('Gmail Trigger').item.json.subject }}</li>\n</ul>\n\n<p style=\"color: #666; font-size: 12px;\">This is an automated notification from your Vision AI Document Processing Bot.</p>",
+        "options": {}
+      },
+      "id": "gmail-send-alert",
+      "name": "Send Alert Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1320, -100],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail Account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "no-operation",
+      "name": "No Action Required",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1320, 100]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Vision AI Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Vision AI Extraction",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vision AI Extraction": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Check Confidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Confidence": {
+      "main": [
+        [
+          {
+            "node": "Send Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Action Required",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Document Processing",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "Vision AI",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "Automation",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
