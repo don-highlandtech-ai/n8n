@@ -1,0 +1,1300 @@
+{
+  "name": "Appointment Scheduler - Reschedule and Cancel",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "timezone",
+              "name": "config.timezone",
+              "value": "America/New_York",
+              "type": "string"
+            },
+            {
+              "id": "calendarId",
+              "name": "config.calendarId",
+              "value": "primary",
+              "type": "string"
+            },
+            {
+              "id": "bookingWindowDays",
+              "name": "config.bookingWindowDays",
+              "value": 30,
+              "type": "number"
+            },
+            {
+              "id": "workingHoursStart",
+              "name": "config.workingHoursStart",
+              "value": "09:00",
+              "type": "string"
+            },
+            {
+              "id": "workingHoursEnd",
+              "name": "config.workingHoursEnd",
+              "value": "17:00",
+              "type": "string"
+            },
+            {
+              "id": "workingDays",
+              "name": "config.workingDays",
+              "value": "={{ [1, 2, 3, 4, 5] }}",
+              "type": "array"
+            },
+            {
+              "id": "appointmentDurationMinutes",
+              "name": "config.appointmentDurationMinutes",
+              "value": 30,
+              "type": "number"
+            },
+            {
+              "id": "bufferBeforeMinutes",
+              "name": "config.bufferBeforeMinutes",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "bufferAfterMinutes",
+              "name": "config.bufferAfterMinutes",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "maxDaysAhead",
+              "name": "config.maxDaysAhead",
+              "value": 60,
+              "type": "number"
+            },
+            {
+              "id": "minNoticeHours",
+              "name": "config.minNoticeHours",
+              "value": 2,
+              "type": "number"
+            },
+            {
+              "id": "allowWeekends",
+              "name": "config.allowWeekends",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "useSms",
+              "name": "config.useSms",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "requireSmsConsent",
+              "name": "config.requireSmsConsent",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "ownerNotificationEmail",
+              "name": "config.ownerNotificationEmail",
+              "value": "your-email@example.com",
+              "type": "string"
+            },
+            {
+              "id": "fromEmailName",
+              "name": "config.fromEmailName",
+              "value": "Appointment Scheduler",
+              "type": "string"
+            },
+            {
+              "id": "sheetId",
+              "name": "config.sheetId",
+              "value": "YOUR_GOOGLE_SHEET_ID_HERE",
+              "type": "string"
+            },
+            {
+              "id": "sheetTabName",
+              "name": "config.sheetTabName",
+              "value": "Appointments",
+              "type": "string"
+            },
+            {
+              "id": "testMode",
+              "name": "config.testMode",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "maxReschedules",
+              "name": "config.maxReschedules",
+              "value": 2,
+              "type": "number"
+            },
+            {
+              "id": "tokenSecret",
+              "name": "config.tokenSecret",
+              "value": "CHANGE_THIS_TO_A_RANDOM_SECRET_STRING_32_CHARS",
+              "type": "string"
+            },
+            {
+              "id": "webhookBaseUrl",
+              "name": "config.webhookBaseUrl",
+              "value": "https://your-n8n-instance.com/webhook",
+              "type": "string"
+            },
+            {
+              "id": "businessName",
+              "name": "config.businessName",
+              "value": "Your Business Name",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-config-reschedule",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300],
+      "notes": "CONFIGURATION NODE - Must match the booking workflow config.\n\nIMPORTANT: tokenSecret MUST be identical to the booking workflow."
+    },
+    {
+      "parameters": {
+        "httpMethod": "=GET",
+        "path": "appointment-reschedule",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-reschedule",
+      "name": "Reschedule/Cancel Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "appointment-reschedule",
+      "notes": "Handles reschedule and cancel requests.\n\nQuery parameters:\n- token (required): HMAC signed token\n- action (required): 'reschedule' or 'cancel'\n- new_start (required for reschedule): ISO datetime"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "token",
+              "name": "request.token",
+              "value": "={{ $json.query.token || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "action",
+              "name": "request.action",
+              "value": "={{ $json.query.action || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "new_start",
+              "name": "request.new_start",
+              "value": "={{ $json.query.new_start || $json.body?.new_start || '' }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "parse-request",
+      "name": "Parse Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [680, 300],
+      "notes": "Extracts token, action, and new_start from query parameters"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate and decode the HMAC token\nconst crypto = require('crypto');\n\nconst config = $('Set Config').first().json.config;\nconst request = $input.first().json.request;\n\n// Check if token exists\nif (!request.token) {\n  return {\n    json: {\n      valid: false,\n      error: 'Missing token',\n      error_code: 'TOKEN_MISSING'\n    }\n  };\n}\n\n// Check if action is valid\nif (!['reschedule', 'cancel'].includes(request.action)) {\n  return {\n    json: {\n      valid: false,\n      error: 'Invalid action. Must be \"reschedule\" or \"cancel\"',\n      error_code: 'INVALID_ACTION'\n    }\n  };\n}\n\ntry {\n  // Split token into payload and signature\n  const [payloadBase64, signature] = request.token.split('.');\n  \n  if (!payloadBase64 || !signature) {\n    return {\n      json: {\n        valid: false,\n        error: 'Invalid token format',\n        error_code: 'TOKEN_INVALID_FORMAT'\n      }\n    };\n  }\n  \n  // Verify signature\n  const expectedSignature = crypto\n    .createHmac('sha256', config.tokenSecret)\n    .update(payloadBase64)\n    .digest('base64url');\n  \n  if (signature !== expectedSignature) {\n    return {\n      json: {\n        valid: false,\n        error: 'Invalid token signature',\n        error_code: 'TOKEN_INVALID_SIGNATURE'\n      }\n    };\n  }\n  \n  // Decode payload\n  const payloadString = Buffer.from(payloadBase64, 'base64url').toString('utf8');\n  const payload = JSON.parse(payloadString);\n  \n  // Check expiration\n  const expiresAt = new Date(payload.expires_at);\n  if (expiresAt < new Date()) {\n    return {\n      json: {\n        valid: false,\n        error: 'Token has expired',\n        error_code: 'TOKEN_EXPIRED'\n      }\n    };\n  }\n  \n  // Token is valid\n  return {\n    json: {\n      valid: true,\n      payload: {\n        appointment_id: payload.appointment_id,\n        client_email: payload.client_email,\n        expires_at: payload.expires_at\n      },\n      request,\n      config\n    }\n  };\n  \n} catch (error) {\n  return {\n    json: {\n      valid: false,\n      error: 'Token validation failed: ' + error.message,\n      error_code: 'TOKEN_VALIDATION_ERROR'\n    }\n  };\n}"
+      },
+      "id": "validate-token",
+      "name": "Validate Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "notes": "Validates HMAC SHA256 token:\n1. Checks token format\n2. Verifies signature\n3. Checks expiration\n\nExtracts appointment_id and client_email from payload"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "token-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "token-valid-check",
+      "name": "Token Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300],
+      "notes": "Routes based on token validation result"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "error",
+              "name": "error.message",
+              "value": "={{ $json.error }}",
+              "type": "string"
+            },
+            {
+              "id": "error_code",
+              "name": "error.code",
+              "value": "={{ $json.error_code }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-token-error",
+      "name": "Set Token Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1340, 480],
+      "notes": "Sets error for invalid tokens"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.config.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.config.sheetTabName }}",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "appointment_id",
+              "lookupValue": "={{ $json.payload.appointment_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "lookup-appointment",
+      "name": "Lookup Appointment in Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1340, 300],
+      "notes": "Retrieves the appointment record from Google Sheets using appointment_id"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "found",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "appointment-found",
+      "name": "Appointment Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300],
+      "notes": "Checks if appointment exists in system"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "error",
+              "name": "error.message",
+              "value": "Appointment not found",
+              "type": "string"
+            },
+            {
+              "id": "error_code",
+              "name": "error.code",
+              "value": "APPOINTMENT_NOT_FOUND",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-not-found-error",
+      "name": "Set Not Found Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1780, 480],
+      "notes": "Sets error for appointment not found"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge appointment data with config and request\nconst appointment = $input.first().json;\nconst tokenData = $('Validate Token').first().json;\n\n// Validate appointment status\nif (appointment.status === 'Cancelled') {\n  return {\n    json: {\n      valid: false,\n      error: 'This appointment has already been cancelled',\n      error_code: 'ALREADY_CANCELLED',\n      appointment,\n      config: tokenData.config,\n      request: tokenData.request\n    }\n  };\n}\n\n// Check email matches (security)\nif (appointment.client_email.toLowerCase() !== tokenData.payload.client_email.toLowerCase()) {\n  return {\n    json: {\n      valid: false,\n      error: 'Token email does not match appointment',\n      error_code: 'EMAIL_MISMATCH',\n      appointment,\n      config: tokenData.config,\n      request: tokenData.request\n    }\n  };\n}\n\n// Check minimum notice for changes\nconst appointmentStart = new Date(appointment.start_time);\nconst now = new Date();\nconst hoursUntilAppointment = (appointmentStart - now) / (1000 * 60 * 60);\nconst minNotice = tokenData.config.minNoticeHours || 2;\n\nif (hoursUntilAppointment < minNotice) {\n  return {\n    json: {\n      valid: false,\n      error: `Changes must be made at least ${minNotice} hours before the appointment`,\n      error_code: 'TOO_LATE_TO_CHANGE',\n      appointment,\n      config: tokenData.config,\n      request: tokenData.request\n    }\n  };\n}\n\n// For reschedule, check reschedule count\nif (tokenData.request.action === 'reschedule') {\n  const rescheduleCount = parseInt(appointment.reschedule_count) || 0;\n  const maxReschedules = tokenData.config.maxReschedules || 2;\n  \n  if (rescheduleCount >= maxReschedules) {\n    return {\n      json: {\n        valid: false,\n        error: `Maximum reschedules (${maxReschedules}) reached. Please contact us to make changes.`,\n        error_code: 'MAX_RESCHEDULES_REACHED',\n        appointment,\n        config: tokenData.config,\n        request: tokenData.request\n      }\n    };\n  }\n  \n  // Check if new_start is provided\n  if (!tokenData.request.new_start) {\n    return {\n      json: {\n        valid: false,\n        error: 'New appointment time is required for reschedule',\n        error_code: 'MISSING_NEW_TIME',\n        appointment,\n        config: tokenData.config,\n        request: tokenData.request\n      }\n    };\n  }\n}\n\nreturn {\n  json: {\n    valid: true,\n    appointment,\n    config: tokenData.config,\n    request: tokenData.request,\n    payload: tokenData.payload\n  }\n};"
+      },
+      "id": "validate-change-allowed",
+      "name": "Validate Change Allowed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 300],
+      "notes": "Validates:\n- Appointment not already cancelled\n- Email matches token\n- Minimum notice period\n- Reschedule count for reschedule action"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "change-allowed",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "change-allowed-check",
+      "name": "Change Allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 300],
+      "notes": "Routes based on validation result"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "error",
+              "name": "error.message",
+              "value": "={{ $json.error }}",
+              "type": "string"
+            },
+            {
+              "id": "error_code",
+              "name": "error.code",
+              "value": "={{ $json.error_code }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-change-error",
+      "name": "Set Change Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2220, 480],
+      "notes": "Sets error for change validation failures"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-reschedule",
+              "leftValue": "={{ $json.request.action }}",
+              "rightValue": "reschedule",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "action-switch",
+      "name": "Reschedule or Cancel?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2220, 300],
+      "notes": "Routes to reschedule flow or cancel flow based on action"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate new time slot for reschedule\nconst data = $input.first().json;\nconst config = data.config;\nconst appointment = data.appointment;\nconst newStart = new Date(data.request.new_start);\n\n// Calculate new end time\nconst duration = config.appointmentDurationMinutes || 30;\nconst newEnd = new Date(newStart.getTime() + duration * 60 * 1000);\n\n// Add buffers for availability check\nconst bufferBefore = config.bufferBeforeMinutes || 10;\nconst bufferAfter = config.bufferAfterMinutes || 10;\nconst checkStart = new Date(newStart.getTime() - bufferBefore * 60 * 1000);\nconst checkEnd = new Date(newEnd.getTime() + bufferAfter * 60 * 1000);\n\n// Validate working hours and days\nconst dayOfWeek = newStart.getDay();\nconst workingDays = config.workingDays || [1, 2, 3, 4, 5];\nconst [startHour, startMin] = (config.workingHoursStart || '09:00').split(':').map(Number);\nconst [endHour, endMin] = (config.workingHoursEnd || '17:00').split(':').map(Number);\n\nconst workDayStart = new Date(newStart);\nworkDayStart.setHours(startHour, startMin, 0, 0);\n\nconst workDayEnd = new Date(newStart);\nworkDayEnd.setHours(endHour, endMin, 0, 0);\n\nlet errors = [];\n\n// Check working day\nif (!config.allowWeekends && !workingDays.includes(dayOfWeek)) {\n  errors.push('Selected day is not a working day');\n}\n\n// Check working hours\nif (newStart < workDayStart || newEnd > workDayEnd) {\n  errors.push(`Appointment must be within working hours (${config.workingHoursStart} - ${config.workingHoursEnd})`);\n}\n\n// Check minimum notice\nconst now = new Date();\nconst minNoticeMs = (config.minNoticeHours || 2) * 60 * 60 * 1000;\nif (newStart < new Date(now.getTime() + minNoticeMs)) {\n  errors.push(`Appointments require at least ${config.minNoticeHours} hours notice`);\n}\n\n// Check max days ahead\nconst maxAheadMs = (config.maxDaysAhead || 60) * 24 * 60 * 60 * 1000;\nif (newStart > new Date(now.getTime() + maxAheadMs)) {\n  errors.push(`Appointments cannot be booked more than ${config.maxDaysAhead} days in advance`);\n}\n\nreturn {\n  json: {\n    ...data,\n    newTime: {\n      start: newStart.toISOString(),\n      end: newEnd.toISOString(),\n      checkStart: checkStart.toISOString(),\n      checkEnd: checkEnd.toISOString()\n    },\n    validation: {\n      valid: errors.length === 0,\n      errors\n    }\n  }\n};"
+      },
+      "id": "validate-new-time",
+      "name": "Validate New Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 220],
+      "notes": "Validates the new requested time for reschedule:\n- Working days and hours\n- Minimum notice\n- Maximum days ahead"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "new-time-valid",
+              "leftValue": "={{ $json.validation.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "new-time-valid-check",
+      "name": "New Time Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2660, 220],
+      "notes": "Routes based on new time validation"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "error",
+              "name": "error.message",
+              "value": "={{ 'Invalid new time: ' + $json.validation.errors.join(', ') }}",
+              "type": "string"
+            },
+            {
+              "id": "error_code",
+              "name": "error.code",
+              "value": "INVALID_NEW_TIME",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-new-time-error",
+      "name": "Set New Time Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2880, 380],
+      "notes": "Sets error for invalid new time"
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $json.config.calendarId }}",
+          "mode": "id"
+        },
+        "timeMin": "={{ $json.newTime.checkStart }}",
+        "timeMax": "={{ $json.newTime.checkEnd }}",
+        "options": {
+          "singleEvents": true
+        }
+      },
+      "id": "check-new-availability",
+      "name": "Check New Slot Availability",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [2880, 220],
+      "notes": "Checks if the new time slot is available in Google Calendar"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter out the current appointment from conflicts\nconst events = $input.all().map(item => item.json);\nconst data = $('Validate New Time').first().json;\nconst currentEventId = data.appointment.calendar_event_id;\n\n// Filter out current event (since we're updating it)\nconst conflicts = events.filter(event => event.id !== currentEventId);\n\nreturn {\n  json: {\n    ...data,\n    hasConflict: conflicts.length > 0,\n    conflicts\n  }\n};"
+      },
+      "id": "filter-conflicts",
+      "name": "Filter Out Current Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3100, 220],
+      "notes": "Filters out the current appointment from conflict check (since we are updating it)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "no-conflict",
+              "leftValue": "={{ $json.hasConflict }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "new-slot-available",
+      "name": "New Slot Available?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3320, 220],
+      "notes": "Routes based on availability of new slot"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "error",
+              "name": "error.message",
+              "value": "The new time slot is not available. Please choose a different time.",
+              "type": "string"
+            },
+            {
+              "id": "error_code",
+              "name": "error.code",
+              "value": "NEW_SLOT_CONFLICT",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-conflict-error",
+      "name": "Set Conflict Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [3540, 380],
+      "notes": "Sets error for new time slot conflict"
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "update",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $json.config.calendarId }}",
+          "mode": "id"
+        },
+        "eventId": "={{ $json.appointment.calendar_event_id }}",
+        "updateFields": {
+          "start": "={{ $json.newTime.start }}",
+          "end": "={{ $json.newTime.end }}",
+          "description": "={{ 'Client: ' + $json.appointment.client_first_name + ' ' + $json.appointment.client_last_name + '\\nEmail: ' + $json.appointment.client_email + '\\nPhone: ' + ($json.appointment.client_phone || 'Not provided') + '\\nService: ' + $json.appointment.service_type + '\\nNotes: ' + ($json.appointment.notes || 'None') + '\\n\\n---\\nAppointment ID: ' + $json.appointment.appointment_id + '\\nRESCHEDULED from: ' + $json.appointment.start_time + '\\n\\nReschedule: ' + $json.appointment.reschedule_url + '\\nCancel: ' + $json.appointment.cancel_url }}",
+          "sendUpdates": "all"
+        }
+      },
+      "id": "update-calendar-event",
+      "name": "Update Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [3540, 220],
+      "notes": "Updates the existing calendar event with the new time"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Filter Out Current Event').first().json.config.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Filter Out Current Event').first().json.config.sheetTabName }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "appointment_id": "={{ $('Filter Out Current Event').first().json.appointment.appointment_id }}",
+            "start_time": "={{ $('Filter Out Current Event').first().json.newTime.start }}",
+            "end_time": "={{ $('Filter Out Current Event').first().json.newTime.end }}",
+            "reschedule_count": "={{ parseInt($('Filter Out Current Event').first().json.appointment.reschedule_count || 0) + 1 }}",
+            "last_action": "Rescheduled",
+            "last_action_ts": "={{ new Date().toISOString() }}",
+            "reminder_24h_sent": "false",
+            "reminder_2h_sent": "false"
+          },
+          "matchingColumns": [
+            "appointment_id"
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-sheet-reschedule",
+      "name": "Update Sheet - Reschedule",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [3760, 220],
+      "notes": "Updates the appointment record with new time and increments reschedule_count. Resets reminder flags."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Filter Out Current Event').first().json.config.testMode ? $('Filter Out Current Event').first().json.config.ownerNotificationEmail : $('Filter Out Current Event').first().json.appointment.client_email }}",
+        "subject": "={{ 'Appointment Rescheduled: ' + $('Filter Out Current Event').first().json.appointment.service_type }}",
+        "emailType": "html",
+        "message": "={{ '<h2>Your Appointment Has Been Rescheduled</h2>' + '<p>Hello ' + $('Filter Out Current Event').first().json.appointment.client_first_name + ',</p>' + '<p>Your appointment has been successfully rescheduled.</p>' + '<div style=\"background: #fff3e0; padding: 20px; border-radius: 8px; margin: 20px 0;\">' + '<p><strong>Previous Time:</strong> ' + new Date($('Filter Out Current Event').first().json.appointment.start_time).toLocaleString('en-US', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: $('Filter Out Current Event').first().json.config.timezone}) + '</p>' + '</div>' + '<div style=\"background: #e8f5e9; padding: 20px; border-radius: 8px; margin: 20px 0;\">' + '<p><strong>NEW Time:</strong></p>' + '<p><strong>Date:</strong> ' + new Date($('Filter Out Current Event').first().json.newTime.start).toLocaleDateString('en-US', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: $('Filter Out Current Event').first().json.config.timezone}) + '</p>' + '<p><strong>Time:</strong> ' + new Date($('Filter Out Current Event').first().json.newTime.start).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', timeZone: $('Filter Out Current Event').first().json.config.timezone}) + ' - ' + new Date($('Filter Out Current Event').first().json.newTime.end).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', timeZone: $('Filter Out Current Event').first().json.config.timezone}) + '</p>' + '</div>' + '<p><strong>Need to make more changes?</strong></p>' + '<p><a href=\"' + $('Filter Out Current Event').first().json.appointment.reschedule_url + '\" style=\"background: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;\">Reschedule Again</a> ' + '<a href=\"' + $('Filter Out Current Event').first().json.appointment.cancel_url + '\" style=\"background: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;\">Cancel</a></p>' + '<p style=\"color: #666; font-size: 12px; margin-top: 30px;\">Appointment ID: ' + $('Filter Out Current Event').first().json.appointment.appointment_id + '</p>' }}",
+        "options": {
+          "senderName": "={{ $('Filter Out Current Event').first().json.config.fromEmailName }}"
+        }
+      },
+      "id": "send-reschedule-email",
+      "name": "Send Reschedule Confirmation",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [3980, 220],
+      "notes": "Sends reschedule confirmation email to client"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Filter Out Current Event').first().json.config.ownerNotificationEmail }}",
+        "subject": "={{ 'Appointment Rescheduled: ' + $('Filter Out Current Event').first().json.appointment.client_first_name + ' ' + $('Filter Out Current Event').first().json.appointment.client_last_name }}",
+        "emailType": "html",
+        "message": "={{ '<h2>Appointment Rescheduled</h2>' + '<p><strong>Client:</strong> ' + $('Filter Out Current Event').first().json.appointment.client_first_name + ' ' + $('Filter Out Current Event').first().json.appointment.client_last_name + '</p>' + '<p><strong>Service:</strong> ' + $('Filter Out Current Event').first().json.appointment.service_type + '</p>' + '<div style=\"background: #fff3e0; padding: 15px; border-radius: 8px; margin: 15px 0;\">' + '<p><strong>Previous:</strong> ' + new Date($('Filter Out Current Event').first().json.appointment.start_time).toLocaleString('en-US', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: $('Filter Out Current Event').first().json.config.timezone}) + '</p>' + '</div>' + '<div style=\"background: #e8f5e9; padding: 15px; border-radius: 8px; margin: 15px 0;\">' + '<p><strong>NEW:</strong> ' + new Date($('Filter Out Current Event').first().json.newTime.start).toLocaleString('en-US', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: $('Filter Out Current Event').first().json.config.timezone}) + '</p>' + '</div>' + '<p><strong>Reschedule Count:</strong> ' + (parseInt($('Filter Out Current Event').first().json.appointment.reschedule_count || 0) + 1) + '</p>' }}",
+        "options": {
+          "senderName": "={{ $('Filter Out Current Event').first().json.config.fromEmailName }}"
+        }
+      },
+      "id": "notify-owner-reschedule",
+      "name": "Notify Owner - Reschedule",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [4200, 220],
+      "notes": "Notifies owner of rescheduled appointment"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, action: 'rescheduled', message: 'Your appointment has been rescheduled. Check your email for confirmation.', new_start: $('Filter Out Current Event').first().json.newTime.start, new_end: $('Filter Out Current Event').first().json.newTime.end }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-reschedule-success",
+      "name": "Respond Reschedule Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [4420, 220],
+      "notes": "Returns success response for reschedule"
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $json.config.calendarId }}",
+          "mode": "id"
+        },
+        "eventId": "={{ $json.appointment.calendar_event_id }}",
+        "options": {
+          "sendUpdates": "all"
+        }
+      },
+      "id": "delete-calendar-event",
+      "name": "Delete Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [2440, 400],
+      "notes": "Deletes the calendar event for cancellation"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Reschedule or Cancel?').first().json.config.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Reschedule or Cancel?').first().json.config.sheetTabName }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "appointment_id": "={{ $('Reschedule or Cancel?').first().json.appointment.appointment_id }}",
+            "status": "Cancelled",
+            "last_action": "Cancelled",
+            "last_action_ts": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [
+            "appointment_id"
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-sheet-cancel",
+      "name": "Update Sheet - Cancel",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2660, 400],
+      "notes": "Updates appointment status to Cancelled in Sheets"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Reschedule or Cancel?').first().json.config.testMode ? $('Reschedule or Cancel?').first().json.config.ownerNotificationEmail : $('Reschedule or Cancel?').first().json.appointment.client_email }}",
+        "subject": "={{ 'Appointment Cancelled: ' + $('Reschedule or Cancel?').first().json.appointment.service_type }}",
+        "emailType": "html",
+        "message": "={{ '<h2>Your Appointment Has Been Cancelled</h2>' + '<p>Hello ' + $('Reschedule or Cancel?').first().json.appointment.client_first_name + ',</p>' + '<p>Your appointment has been successfully cancelled.</p>' + '<div style=\"background: #ffebee; padding: 20px; border-radius: 8px; margin: 20px 0;\">' + '<p><strong>Cancelled Appointment:</strong></p>' + '<p><strong>Service:</strong> ' + $('Reschedule or Cancel?').first().json.appointment.service_type + '</p>' + '<p><strong>Original Date:</strong> ' + new Date($('Reschedule or Cancel?').first().json.appointment.start_time).toLocaleDateString('en-US', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: $('Reschedule or Cancel?').first().json.config.timezone}) + '</p>' + '<p><strong>Original Time:</strong> ' + new Date($('Reschedule or Cancel?').first().json.appointment.start_time).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', timeZone: $('Reschedule or Cancel?').first().json.config.timezone}) + '</p>' + '</div>' + '<p>If you would like to book a new appointment, please visit our booking page.</p>' + '<p style=\"color: #666; font-size: 12px; margin-top: 30px;\">Appointment ID: ' + $('Reschedule or Cancel?').first().json.appointment.appointment_id + '</p>' }}",
+        "options": {
+          "senderName": "={{ $('Reschedule or Cancel?').first().json.config.fromEmailName }}"
+        }
+      },
+      "id": "send-cancel-email",
+      "name": "Send Cancellation Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2880, 400],
+      "notes": "Sends cancellation confirmation email to client"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Reschedule or Cancel?').first().json.config.ownerNotificationEmail }}",
+        "subject": "={{ 'Appointment Cancelled: ' + $('Reschedule or Cancel?').first().json.appointment.client_first_name + ' ' + $('Reschedule or Cancel?').first().json.appointment.client_last_name }}",
+        "emailType": "html",
+        "message": "={{ '<h2>Appointment Cancelled</h2>' + '<div style=\"background: #ffebee; padding: 15px; border-radius: 8px; margin: 15px 0;\">' + '<p><strong>Client:</strong> ' + $('Reschedule or Cancel?').first().json.appointment.client_first_name + ' ' + $('Reschedule or Cancel?').first().json.appointment.client_last_name + '</p>' + '<p><strong>Email:</strong> ' + $('Reschedule or Cancel?').first().json.appointment.client_email + '</p>' + '<p><strong>Service:</strong> ' + $('Reschedule or Cancel?').first().json.appointment.service_type + '</p>' + '<p><strong>Was Scheduled For:</strong> ' + new Date($('Reschedule or Cancel?').first().json.appointment.start_time).toLocaleString('en-US', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: $('Reschedule or Cancel?').first().json.config.timezone}) + '</p>' + '</div>' + '<p><strong>Appointment ID:</strong> ' + $('Reschedule or Cancel?').first().json.appointment.appointment_id + '</p>' }}",
+        "options": {
+          "senderName": "={{ $('Reschedule or Cancel?').first().json.config.fromEmailName }}"
+        }
+      },
+      "id": "notify-owner-cancel",
+      "name": "Notify Owner - Cancel",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [3100, 400],
+      "notes": "Notifies owner of cancelled appointment"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, action: 'cancelled', message: 'Your appointment has been cancelled. A confirmation email has been sent.' }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-cancel-success",
+      "name": "Respond Cancel Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [3320, 400],
+      "notes": "Returns success response for cancellation"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error?.message || $json.error || 'An error occurred', code: $json.error?.code || $json.error_code || 'UNKNOWN_ERROR' }) }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-error-reschedule",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2000, 660],
+      "notes": "Returns error response"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Set Config').first().json.config.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ErrorLog",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "error_type": "={{ $json.error?.code || $json.error_code || 'UNKNOWN' }}",
+            "error_message": "={{ $json.error?.message || $json.error || 'Unknown error' }}",
+            "client_email": "={{ $('Validate Token').first().json.payload?.client_email || 'N/A' }}",
+            "request_data": "={{ JSON.stringify($('Parse Request').first().json.request || {}) }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-error-reschedule",
+      "name": "Log Error to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1780, 660],
+      "notes": "Logs errors to ErrorLog sheet"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.config.ownerNotificationEmail }}",
+        "subject": "={{ 'Reschedule/Cancel Error: ' + ($json.error?.code || $json.error_code || 'Unknown Error') }}",
+        "emailType": "text",
+        "message": "={{ 'A reschedule/cancel error occurred:\\n\\nError: ' + ($json.error?.message || $json.error || 'Unknown error') + '\\nCode: ' + ($json.error?.code || $json.error_code || 'UNKNOWN') + '\\nTime: ' + new Date().toISOString() + '\\n\\nAction Attempted: ' + ($('Parse Request').first().json.request?.action || 'N/A') }}",
+        "options": {}
+      },
+      "id": "notify-owner-error-reschedule",
+      "name": "Notify Owner of Error",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1560, 660],
+      "notes": "Notifies owner of reschedule/cancel errors"
+    }
+  ],
+  "connections": {
+    "Reschedule/Cancel Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Lookup Appointment in Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Token Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Token Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Appointment in Sheets": {
+      "main": [
+        [
+          {
+            "node": "Appointment Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Appointment Found?": {
+      "main": [
+        [
+          {
+            "node": "Validate Change Allowed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Not Found Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Not Found Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Change Allowed": {
+      "main": [
+        [
+          {
+            "node": "Change Allowed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Change Allowed?": {
+      "main": [
+        [
+          {
+            "node": "Reschedule or Cancel?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Change Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Change Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reschedule or Cancel?": {
+      "main": [
+        [
+          {
+            "node": "Validate New Time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate New Time": {
+      "main": [
+        [
+          {
+            "node": "New Time Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Time Valid?": {
+      "main": [
+        [
+          {
+            "node": "Check New Slot Availability",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set New Time Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set New Time Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check New Slot Availability": {
+      "main": [
+        [
+          {
+            "node": "Filter Out Current Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Out Current Event": {
+      "main": [
+        [
+          {
+            "node": "New Slot Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Slot Available?": {
+      "main": [
+        [
+          {
+            "node": "Update Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Conflict Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Conflict Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Update Sheet - Reschedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Sheet - Reschedule": {
+      "main": [
+        [
+          {
+            "node": "Send Reschedule Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reschedule Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner - Reschedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner - Reschedule": {
+      "main": [
+        [
+          {
+            "node": "Respond Reschedule Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Update Sheet - Cancel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Sheet - Cancel": {
+      "main": [
+        [
+          {
+            "node": "Send Cancellation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Cancellation Email": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner - Cancel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner - Cancel": {
+      "main": [
+        [
+          {
+            "node": "Respond Cancel Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error to Sheets": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner of Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner of Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "appointment-scheduler-reschedule-v1"
+  },
+  "id": "appointment-scheduler-reschedule",
+  "tags": [
+    {
+      "id": "appointment-scheduler",
+      "name": "Appointment Scheduler"
+    }
+  ]
+}

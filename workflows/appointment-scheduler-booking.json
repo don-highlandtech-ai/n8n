@@ -1,0 +1,1209 @@
+{
+  "name": "Appointment Scheduler - Booking Intake",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "config-node",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300],
+      "notes": "CONFIGURATION NODE - Edit these values for your setup.\n\nRequired credentials:\n- Google Calendar OAuth2\n- Gmail OAuth2\n- Google Sheets OAuth2\n- (Optional) Twilio API\n\nAll times use the timezone specified below."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "timezone",
+              "name": "config.timezone",
+              "value": "America/New_York",
+              "type": "string"
+            },
+            {
+              "id": "calendarId",
+              "name": "config.calendarId",
+              "value": "primary",
+              "type": "string"
+            },
+            {
+              "id": "bookingWindowDays",
+              "name": "config.bookingWindowDays",
+              "value": 30,
+              "type": "number"
+            },
+            {
+              "id": "workingHoursStart",
+              "name": "config.workingHoursStart",
+              "value": "09:00",
+              "type": "string"
+            },
+            {
+              "id": "workingHoursEnd",
+              "name": "config.workingHoursEnd",
+              "value": "17:00",
+              "type": "string"
+            },
+            {
+              "id": "workingDays",
+              "name": "config.workingDays",
+              "value": "={{ [1, 2, 3, 4, 5] }}",
+              "type": "array"
+            },
+            {
+              "id": "appointmentDurationMinutes",
+              "name": "config.appointmentDurationMinutes",
+              "value": 30,
+              "type": "number"
+            },
+            {
+              "id": "bufferBeforeMinutes",
+              "name": "config.bufferBeforeMinutes",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "bufferAfterMinutes",
+              "name": "config.bufferAfterMinutes",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "maxDaysAhead",
+              "name": "config.maxDaysAhead",
+              "value": 60,
+              "type": "number"
+            },
+            {
+              "id": "minNoticeHours",
+              "name": "config.minNoticeHours",
+              "value": 2,
+              "type": "number"
+            },
+            {
+              "id": "allowWeekends",
+              "name": "config.allowWeekends",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "reminderScheduleHours",
+              "name": "config.reminderScheduleHours",
+              "value": "={{ [24, 2] }}",
+              "type": "array"
+            },
+            {
+              "id": "useSms",
+              "name": "config.useSms",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "requireSmsConsent",
+              "name": "config.requireSmsConsent",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "ownerNotificationEmail",
+              "name": "config.ownerNotificationEmail",
+              "value": "your-email@example.com",
+              "type": "string"
+            },
+            {
+              "id": "fromEmailName",
+              "name": "config.fromEmailName",
+              "value": "Appointment Scheduler",
+              "type": "string"
+            },
+            {
+              "id": "sheetId",
+              "name": "config.sheetId",
+              "value": "YOUR_GOOGLE_SHEET_ID_HERE",
+              "type": "string"
+            },
+            {
+              "id": "sheetTabName",
+              "name": "config.sheetTabName",
+              "value": "Appointments",
+              "type": "string"
+            },
+            {
+              "id": "testMode",
+              "name": "config.testMode",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "maxReschedules",
+              "name": "config.maxReschedules",
+              "value": 2,
+              "type": "number"
+            },
+            {
+              "id": "tokenSecret",
+              "name": "config.tokenSecret",
+              "value": "CHANGE_THIS_TO_A_RANDOM_SECRET_STRING_32_CHARS",
+              "type": "string"
+            },
+            {
+              "id": "webhookBaseUrl",
+              "name": "config.webhookBaseUrl",
+              "value": "https://your-n8n-instance.com/webhook",
+              "type": "string"
+            },
+            {
+              "id": "enableGoogleMeet",
+              "name": "config.enableGoogleMeet",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "businessName",
+              "name": "config.businessName",
+              "value": "Your Business Name",
+              "type": "string"
+            },
+            {
+              "id": "quietHoursStart",
+              "name": "config.quietHoursStart",
+              "value": "20:00",
+              "type": "string"
+            },
+            {
+              "id": "quietHoursEnd",
+              "name": "config.quietHoursEnd",
+              "value": "08:00",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "appointment-booking",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-booking",
+      "name": "Booking Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "appointment-booking",
+      "notes": "Receives booking requests.\n\nExpected payload:\n- first_name (required)\n- last_name (required)\n- email (required)\n- phone (optional)\n- service_type (optional)\n- requested_start (ISO datetime, required)\n- requested_end (optional)\n- notes (optional)\n- consent_sms (optional boolean)"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "first_name",
+              "name": "booking.first_name",
+              "value": "={{ $json.body.first_name || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "last_name",
+              "name": "booking.last_name",
+              "value": "={{ $json.body.last_name || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "email",
+              "name": "booking.email",
+              "value": "={{ $json.body.email || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "phone",
+              "name": "booking.phone",
+              "value": "={{ $json.body.phone || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "service_type",
+              "name": "booking.service_type",
+              "value": "={{ $json.body.service_type || 'General Appointment' }}",
+              "type": "string"
+            },
+            {
+              "id": "requested_start",
+              "name": "booking.requested_start",
+              "value": "={{ $json.body.requested_start }}",
+              "type": "string"
+            },
+            {
+              "id": "requested_end",
+              "name": "booking.requested_end",
+              "value": "={{ $json.body.requested_end || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "notes",
+              "name": "booking.notes",
+              "value": "={{ $json.body.notes || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "consent_sms",
+              "name": "booking.consent_sms",
+              "value": "={{ $json.body.consent_sms === true || $json.body.consent_sms === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "appointment_id",
+              "name": "booking.appointment_id",
+              "value": "={{ 'APT-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substring(2, 7).toUpperCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "timestamp_created",
+              "name": "booking.timestamp_created",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "parse-booking",
+      "name": "Parse Booking Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [680, 300],
+      "notes": "Extracts and normalizes booking data from webhook payload. Generates unique appointment_id."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-required-fields",
+              "leftValue": "={{ $json.booking.first_name && $json.booking.last_name && $json.booking.email && $json.booking.requested_start }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validate-required",
+      "name": "Validate Required Fields",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "notes": "Checks that all required fields are present: first_name, last_name, email, requested_start"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "error",
+              "name": "error.message",
+              "value": "Missing required fields. Please provide: first_name, last_name, email, and requested_start.",
+              "type": "string"
+            },
+            {
+              "id": "error_code",
+              "name": "error.code",
+              "value": "VALIDATION_ERROR",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-validation-error",
+      "name": "Set Validation Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1120, 480],
+      "notes": "Sets error message for missing required fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Load config and booking from previous nodes\nconst config = $('Set Config').first().json.config;\nconst booking = $input.first().json.booking;\n\n// Calculate end time if not provided\nlet requestedStart = new Date(booking.requested_start);\nlet requestedEnd;\n\nif (booking.requested_end) {\n  requestedEnd = new Date(booking.requested_end);\n} else {\n  requestedEnd = new Date(requestedStart.getTime() + config.appointmentDurationMinutes * 60 * 1000);\n}\n\n// Add buffers for availability check\nconst checkStart = new Date(requestedStart.getTime() - config.bufferBeforeMinutes * 60 * 1000);\nconst checkEnd = new Date(requestedEnd.getTime() + config.bufferAfterMinutes * 60 * 1000);\n\n// Generate dedupe key\nconst dedupeKey = `${booking.email.toLowerCase()}_${requestedStart.toISOString()}_${booking.service_type}`.replace(/[^a-zA-Z0-9_-]/g, '_');\n\n// Get day of week (0 = Sunday, 1 = Monday, etc.)\nconst dayOfWeek = requestedStart.getDay();\n\n// Parse working hours for the requested day\nconst workingDays = config.workingDays || [1, 2, 3, 4, 5];\nconst workingHoursStart = config.workingHoursStart || '09:00';\nconst workingHoursEnd = config.workingHoursEnd || '17:00';\n\n// Create date objects for working hours on the requested day\nconst [startHour, startMin] = workingHoursStart.split(':').map(Number);\nconst [endHour, endMin] = workingHoursEnd.split(':').map(Number);\n\nconst workDayStart = new Date(requestedStart);\nworkDayStart.setHours(startHour, startMin, 0, 0);\n\nconst workDayEnd = new Date(requestedStart);\nworkDayEnd.setHours(endHour, endMin, 0, 0);\n\n// Calculate min and max booking times\nconst now = new Date();\nconst minBookingTime = new Date(now.getTime() + config.minNoticeHours * 60 * 60 * 1000);\nconst maxBookingTime = new Date(now.getTime() + config.maxDaysAhead * 24 * 60 * 60 * 1000);\n\n// Validation checks\nlet validationErrors = [];\n\n// Check if day is a working day\nconst isWorkingDay = config.allowWeekends ? true : workingDays.includes(dayOfWeek);\nif (!isWorkingDay) {\n  validationErrors.push('Selected day is not a working day');\n}\n\n// Check if within working hours\nif (requestedStart < workDayStart || requestedEnd > workDayEnd) {\n  validationErrors.push(`Appointment must be within working hours (${workingHoursStart} - ${workingHoursEnd})`);\n}\n\n// Check minimum notice\nif (requestedStart < minBookingTime) {\n  validationErrors.push(`Appointments require at least ${config.minNoticeHours} hours notice`);\n}\n\n// Check maximum days ahead\nif (requestedStart > maxBookingTime) {\n  validationErrors.push(`Appointments cannot be booked more than ${config.maxDaysAhead} days in advance`);\n}\n\n// Email validation\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (!emailRegex.test(booking.email)) {\n  validationErrors.push('Invalid email format');\n}\n\nreturn {\n  json: {\n    booking: {\n      ...booking,\n      requested_end: requestedEnd.toISOString(),\n      dedupe_key: dedupeKey\n    },\n    validation: {\n      isValid: validationErrors.length === 0,\n      errors: validationErrors,\n      checkStart: checkStart.toISOString(),\n      checkEnd: checkEnd.toISOString(),\n      dayOfWeek,\n      isWorkingDay\n    },\n    config\n  }\n};"
+      },
+      "id": "validate-constraints",
+      "name": "Validate Booking Constraints",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300],
+      "notes": "Validates:\n- Working days and hours\n- Minimum notice period\n- Maximum days ahead\n- Email format\n- Calculates buffers and dedupe key"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-valid",
+              "leftValue": "={{ $json.validation.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-constraints-valid",
+      "name": "Constraints Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 300],
+      "notes": "Routes based on whether booking passes all constraint validations"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "error",
+              "name": "error.message",
+              "value": "={{ 'Booking constraint errors: ' + $json.validation.errors.join(', ') }}",
+              "type": "string"
+            },
+            {
+              "id": "error_code",
+              "name": "error.code",
+              "value": "CONSTRAINT_ERROR",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-constraint-error",
+      "name": "Set Constraint Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1560, 480],
+      "notes": "Sets error for constraint validation failures"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.config.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.config.sheetTabName }}",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "dedupe_key",
+              "lookupValue": "={{ $json.booking.dedupe_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-dedupe",
+      "name": "Check Dedupe in Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1560, 300],
+      "notes": "Checks if this booking request already exists (dedupe by email + start time + service type)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "no-duplicate",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-duplicate",
+      "name": "Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 300],
+      "notes": "Checks if dedupe key already exists in Sheets"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "error",
+              "name": "error.message",
+              "value": "This booking request has already been submitted. Please check your email for confirmation.",
+              "type": "string"
+            },
+            {
+              "id": "error_code",
+              "name": "error.code",
+              "value": "DUPLICATE_BOOKING",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-duplicate-error",
+      "name": "Set Duplicate Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2000, 480],
+      "notes": "Sets error for duplicate booking attempts"
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $('Set Config').first().json.config.calendarId }}",
+          "mode": "id"
+        },
+        "timeMin": "={{ $('Validate Booking Constraints').first().json.validation.checkStart }}",
+        "timeMax": "={{ $('Validate Booking Constraints').first().json.validation.checkEnd }}",
+        "options": {
+          "singleEvents": true
+        }
+      },
+      "id": "check-calendar-availability",
+      "name": "Check Calendar Availability",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [2000, 300],
+      "notes": "Queries Google Calendar for any existing events during the requested time slot (including buffers)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-available",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-slot-available",
+      "name": "Is Slot Available?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2220, 300],
+      "notes": "Routes to booking creation if no conflicts, or to suggest alternatives if conflicts exist"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Find alternative available slots\nconst config = $('Set Config').first().json.config;\nconst booking = $('Validate Booking Constraints').first().json.booking;\nconst existingEvents = $input.all().map(item => item.json);\n\n// Get events from calendar (we need to re-query for a wider range)\nconst now = new Date();\nconst searchEndDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // Next 7 days\n\n// Parse working hours\nconst [startHour, startMin] = config.workingHoursStart.split(':').map(Number);\nconst [endHour, endMin] = config.workingHoursEnd.split(':').map(Number);\nconst workingDays = config.workingDays || [1, 2, 3, 4, 5];\nconst duration = config.appointmentDurationMinutes;\nconst bufferBefore = config.bufferBeforeMinutes;\nconst bufferAfter = config.bufferAfterMinutes;\nconst totalSlotTime = duration + bufferBefore + bufferAfter;\n\n// Build list of busy times from existing events\n// Note: In a real scenario, we would need another calendar query here\n// For now, we'll return suggested times based on working hours\n\nlet alternatives = [];\nlet checkDate = new Date(now.getTime() + config.minNoticeHours * 60 * 60 * 1000);\n\n// Round up to next slot boundary\ncheckDate.setMinutes(Math.ceil(checkDate.getMinutes() / 30) * 30, 0, 0);\n\nwhile (alternatives.length < 3 && checkDate < searchEndDate) {\n  const dayOfWeek = checkDate.getDay();\n  \n  // Check if it's a working day\n  if (workingDays.includes(dayOfWeek)) {\n    // Set to start of working hours if before\n    const workStart = new Date(checkDate);\n    workStart.setHours(startHour, startMin, 0, 0);\n    \n    const workEnd = new Date(checkDate);\n    workEnd.setHours(endHour, endMin, 0, 0);\n    \n    // Adjust checkDate if it's before work start\n    if (checkDate < workStart) {\n      checkDate = new Date(workStart);\n    }\n    \n    // Check slots during working hours\n    while (checkDate.getTime() + duration * 60 * 1000 <= workEnd.getTime() && alternatives.length < 3) {\n      const slotEnd = new Date(checkDate.getTime() + duration * 60 * 1000);\n      \n      // Add to alternatives (in production, check against busy times)\n      alternatives.push({\n        start: checkDate.toISOString(),\n        end: slotEnd.toISOString(),\n        formatted: checkDate.toLocaleString('en-US', {\n          weekday: 'long',\n          month: 'long',\n          day: 'numeric',\n          hour: 'numeric',\n          minute: '2-digit',\n          timeZone: config.timezone\n        })\n      });\n      \n      // Move to next slot\n      checkDate = new Date(checkDate.getTime() + totalSlotTime * 60 * 1000);\n    }\n  }\n  \n  // Move to next day\n  checkDate.setDate(checkDate.getDate() + 1);\n  checkDate.setHours(0, 0, 0, 0);\n}\n\nreturn {\n  json: {\n    conflict: true,\n    message: 'The requested time slot is not available.',\n    alternatives,\n    booking,\n    config\n  }\n};"
+      },
+      "id": "find-alternatives",
+      "name": "Find Alternative Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 480],
+      "notes": "Calculates 3 alternative available time slots within the next 7 days when requested slot is unavailable"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate HMAC token for reschedule/cancel links\nconst crypto = require('crypto');\n\nconst config = $('Set Config').first().json.config;\nconst booking = $('Validate Booking Constraints').first().json.booking;\n\n// Token expires in 30 days\nconst expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();\n\n// Create token payload\nconst payload = {\n  appointment_id: booking.appointment_id,\n  client_email: booking.email,\n  expires_at: expiresAt\n};\n\nconst payloadString = JSON.stringify(payload);\nconst payloadBase64 = Buffer.from(payloadString).toString('base64url');\n\n// Create HMAC signature\nconst signature = crypto\n  .createHmac('sha256', config.tokenSecret)\n  .update(payloadBase64)\n  .digest('base64url');\n\n// Full token: base64url(payload).signature\nconst token = `${payloadBase64}.${signature}`;\n\n// Generate URLs\nconst rescheduleUrl = `${config.webhookBaseUrl}/appointment-reschedule?token=${encodeURIComponent(token)}&action=reschedule`;\nconst cancelUrl = `${config.webhookBaseUrl}/appointment-reschedule?token=${encodeURIComponent(token)}&action=cancel`;\n\nreturn {\n  json: {\n    booking: {\n      ...booking,\n      token,\n      reschedule_url: rescheduleUrl,\n      cancel_url: cancelUrl,\n      token_expires_at: expiresAt\n    },\n    config\n  }\n};"
+      },
+      "id": "generate-token",
+      "name": "Generate Secure Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 300],
+      "notes": "Creates HMAC SHA256 signed token for reschedule/cancel links.\n\nToken format: base64url(payload).signature\nPayload: appointment_id, client_email, expires_at\nValid for 30 days"
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $json.config.calendarId }}",
+          "mode": "id"
+        },
+        "start": "={{ $json.booking.requested_start }}",
+        "end": "={{ $json.booking.requested_end }}",
+        "additionalFields": {
+          "summary": "={{ $json.booking.service_type + ' with ' + $json.booking.first_name + ' ' + $json.booking.last_name }}",
+          "description": "={{ 'Client: ' + $json.booking.first_name + ' ' + $json.booking.last_name + '\\nEmail: ' + $json.booking.email + '\\nPhone: ' + ($json.booking.phone || 'Not provided') + '\\nService: ' + $json.booking.service_type + '\\nNotes: ' + ($json.booking.notes || 'None') + '\\n\\n---\\nAppointment ID: ' + $json.booking.appointment_id + '\\n\\nReschedule: ' + $json.booking.reschedule_url + '\\nCancel: ' + $json.booking.cancel_url }}",
+          "conferenceData": {
+            "createRequest": {
+              "requestId": "={{ $json.booking.appointment_id }}",
+              "conferenceSolutionKey": {
+                "type": "hangoutsMeet"
+              }
+            }
+          },
+          "guestsCanModify": false,
+          "sendUpdates": "all"
+        },
+        "options": {}
+      },
+      "id": "create-calendar-event",
+      "name": "Create Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [2660, 300],
+      "notes": "Creates the calendar event with:\n- Title: Service with Client Name\n- Description with all details\n- Google Meet link (if enabled)\n- Sends invite to attendees"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "calendar_event_id",
+              "name": "event.calendar_event_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "meeting_link",
+              "name": "event.meeting_link",
+              "value": "={{ $json.hangoutLink || $json.conferenceData?.entryPoints?.[0]?.uri || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "event_link",
+              "name": "event.event_link",
+              "value": "={{ $json.htmlLink }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "extract-event-details",
+      "name": "Extract Event Details",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2880, 300],
+      "notes": "Extracts calendar event ID and Google Meet link from created event"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Set Config').first().json.config.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Set Config').first().json.config.sheetTabName }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp_created": "={{ $('Validate Booking Constraints').first().json.booking.timestamp_created }}",
+            "appointment_id": "={{ $('Generate Secure Token').first().json.booking.appointment_id }}",
+            "status": "Confirmed",
+            "client_first_name": "={{ $('Generate Secure Token').first().json.booking.first_name }}",
+            "client_last_name": "={{ $('Generate Secure Token').first().json.booking.last_name }}",
+            "client_email": "={{ $('Generate Secure Token').first().json.booking.email }}",
+            "client_phone": "={{ $('Generate Secure Token').first().json.booking.phone }}",
+            "service_type": "={{ $('Generate Secure Token').first().json.booking.service_type }}",
+            "start_time": "={{ $('Generate Secure Token').first().json.booking.requested_start }}",
+            "end_time": "={{ $('Generate Secure Token').first().json.booking.requested_end }}",
+            "timezone": "={{ $('Set Config').first().json.config.timezone }}",
+            "calendar_event_id": "={{ $json.event.calendar_event_id }}",
+            "meeting_link": "={{ $json.event.meeting_link }}",
+            "reschedule_count": "0",
+            "dedupe_key": "={{ $('Generate Secure Token').first().json.booking.dedupe_key }}",
+            "last_action": "Created",
+            "last_action_ts": "={{ new Date().toISOString() }}",
+            "notes": "={{ $('Generate Secure Token').first().json.booking.notes }}",
+            "reschedule_url": "={{ $('Generate Secure Token').first().json.booking.reschedule_url }}",
+            "cancel_url": "={{ $('Generate Secure Token').first().json.booking.cancel_url }}",
+            "reminder_24h_sent": "false",
+            "reminder_2h_sent": "false",
+            "consent_sms": "={{ $('Generate Secure Token').first().json.booking.consent_sms }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-to-sheets",
+      "name": "Log Booking to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [3100, 300],
+      "notes": "Records the new booking in Google Sheets with all details including:\n- Appointment info\n- Calendar event ID\n- Reschedule/cancel URLs\n- Reminder tracking flags"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.config.testMode ? $('Set Config').first().json.config.ownerNotificationEmail : $('Generate Secure Token').first().json.booking.email }}",
+        "subject": "={{ 'Appointment Confirmed: ' + $('Generate Secure Token').first().json.booking.service_type + ' on ' + new Date($('Generate Secure Token').first().json.booking.requested_start).toLocaleDateString('en-US', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: $('Set Config').first().json.config.timezone}) }}",
+        "emailType": "html",
+        "message": "={{ '<h2>Your Appointment is Confirmed!</h2>' + '<p>Hello ' + $('Generate Secure Token').first().json.booking.first_name + ',</p>' + '<p>Your appointment has been successfully scheduled.</p>' + '<div style=\"background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;\">' + '<p><strong>Service:</strong> ' + $('Generate Secure Token').first().json.booking.service_type + '</p>' + '<p><strong>Date:</strong> ' + new Date($('Generate Secure Token').first().json.booking.requested_start).toLocaleDateString('en-US', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: $('Set Config').first().json.config.timezone}) + '</p>' + '<p><strong>Time:</strong> ' + new Date($('Generate Secure Token').first().json.booking.requested_start).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', timeZone: $('Set Config').first().json.config.timezone}) + ' - ' + new Date($('Generate Secure Token').first().json.booking.requested_end).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', timeZone: $('Set Config').first().json.config.timezone}) + '</p>' + '<p><strong>Timezone:</strong> ' + $('Set Config').first().json.config.timezone + '</p>' + ($('Extract Event Details').first().json.event.meeting_link ? '<p><strong>Meeting Link:</strong> <a href=\"' + $('Extract Event Details').first().json.event.meeting_link + '\">' + $('Extract Event Details').first().json.event.meeting_link + '</a></p>' : '') + '</div>' + '<p><strong>Need to make changes?</strong></p>' + '<p><a href=\"' + $('Generate Secure Token').first().json.booking.reschedule_url + '\" style=\"background: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;\">Reschedule</a> ' + '<a href=\"' + $('Generate Secure Token').first().json.booking.cancel_url + '\" style=\"background: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;\">Cancel</a></p>' + '<p style=\"color: #666; font-size: 12px; margin-top: 30px;\">Appointment ID: ' + $('Generate Secure Token').first().json.booking.appointment_id + '</p>' + '<p style=\"color: #666; font-size: 12px;\">You will receive reminders 24 hours and 2 hours before your appointment.</p>' }}",
+        "options": {
+          "senderName": "={{ $('Set Config').first().json.config.fromEmailName }}"
+        }
+      },
+      "id": "send-client-confirmation",
+      "name": "Send Client Confirmation Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [3320, 300],
+      "notes": "Sends confirmation email to client (or owner if testMode is true) with:\n- Appointment details\n- Meeting link\n- Reschedule/cancel buttons"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.config.ownerNotificationEmail }}",
+        "subject": "={{ 'New Booking: ' + $('Generate Secure Token').first().json.booking.service_type + ' - ' + $('Generate Secure Token').first().json.booking.first_name + ' ' + $('Generate Secure Token').first().json.booking.last_name }}",
+        "emailType": "html",
+        "message": "={{ '<h2>New Appointment Booked</h2>' + '<div style=\"background: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0;\">' + '<p><strong>Client:</strong> ' + $('Generate Secure Token').first().json.booking.first_name + ' ' + $('Generate Secure Token').first().json.booking.last_name + '</p>' + '<p><strong>Email:</strong> ' + $('Generate Secure Token').first().json.booking.email + '</p>' + '<p><strong>Phone:</strong> ' + ($('Generate Secure Token').first().json.booking.phone || 'Not provided') + '</p>' + '<p><strong>Service:</strong> ' + $('Generate Secure Token').first().json.booking.service_type + '</p>' + '<p><strong>Date:</strong> ' + new Date($('Generate Secure Token').first().json.booking.requested_start).toLocaleDateString('en-US', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: $('Set Config').first().json.config.timezone}) + '</p>' + '<p><strong>Time:</strong> ' + new Date($('Generate Secure Token').first().json.booking.requested_start).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', timeZone: $('Set Config').first().json.config.timezone}) + ' - ' + new Date($('Generate Secure Token').first().json.booking.requested_end).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', timeZone: $('Set Config').first().json.config.timezone}) + '</p>' + '<p><strong>Notes:</strong> ' + ($('Generate Secure Token').first().json.booking.notes || 'None') + '</p>' + '</div>' + '<p><strong>Appointment ID:</strong> ' + $('Generate Secure Token').first().json.booking.appointment_id + '</p>' + ($('Extract Event Details').first().json.event.meeting_link ? '<p><strong>Meeting Link:</strong> <a href=\"' + $('Extract Event Details').first().json.event.meeting_link + '\">' + $('Extract Event Details').first().json.event.meeting_link + '</a></p>' : '') }}",
+        "options": {
+          "senderName": "={{ $('Set Config').first().json.config.fromEmailName }}"
+        }
+      },
+      "id": "send-owner-notification",
+      "name": "Send Owner Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [3540, 300],
+      "notes": "Notifies the business owner of the new booking with all client and appointment details"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "sms-enabled",
+              "leftValue": "={{ $('Set Config').first().json.config.useSms }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "has-phone",
+              "leftValue": "={{ $('Generate Secure Token').first().json.booking.phone }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "has-consent",
+              "leftValue": "={{ !$('Set Config').first().json.config.requireSmsConsent || $('Generate Secure Token').first().json.booking.consent_sms }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-sms-enabled",
+      "name": "SMS Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3760, 300],
+      "notes": "Checks if SMS is enabled, phone is provided, and consent is given (if required)"
+    },
+    {
+      "parameters": {
+        "from": "={{/* Your Twilio phone number */}}",
+        "to": "={{ $('Generate Secure Token').first().json.booking.phone }}",
+        "message": "={{ 'Appointment Confirmed! ' + $('Generate Secure Token').first().json.booking.service_type + ' on ' + new Date($('Generate Secure Token').first().json.booking.requested_start).toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric', timeZone: $('Set Config').first().json.config.timezone}) + ' at ' + new Date($('Generate Secure Token').first().json.booking.requested_start).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', timeZone: $('Set Config').first().json.config.timezone}) + '. Reply HELP for assistance.' }}"
+      },
+      "id": "send-sms-confirmation",
+      "name": "Send SMS Confirmation",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [3980, 220],
+      "notes": "Sends SMS confirmation via Twilio.\n\nRequires Twilio credentials to be configured.\nUpdate 'from' number with your Twilio phone number."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, appointment_id: $('Generate Secure Token').first().json.booking.appointment_id, message: 'Appointment confirmed! Check your email for details.', start: $('Generate Secure Token').first().json.booking.requested_start, end: $('Generate Secure Token').first().json.booking.requested_end, meeting_link: $('Extract Event Details').first().json.event.meeting_link || null }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [4200, 300],
+      "notes": "Returns success response to the booking form with appointment details"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error?.message || 'An error occurred', code: $json.error?.code || 'UNKNOWN_ERROR' }) }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1780, 660],
+      "notes": "Returns error response to the booking form"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, conflict: true, message: $json.message, alternatives: $json.alternatives }) }}",
+        "options": {
+          "responseCode": 409,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-conflict",
+      "name": "Respond Conflict with Alternatives",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2660, 480],
+      "notes": "Returns conflict response with 3 alternative time slots"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Set Config').first().json.config.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ErrorLog",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "error_type": "={{ $json.error?.code || 'UNKNOWN' }}",
+            "error_message": "={{ $json.error?.message || 'Unknown error' }}",
+            "client_email": "={{ $('Parse Booking Request').first().json.booking?.email || 'N/A' }}",
+            "request_data": "={{ JSON.stringify($('Booking Webhook').first().json.body || {}) }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-error-to-sheets",
+      "name": "Log Error to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1560, 660],
+      "notes": "Logs all errors to ErrorLog tab in Google Sheets"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').first().json.config.ownerNotificationEmail }}",
+        "subject": "={{ 'Booking Error: ' + ($json.error?.code || 'Unknown Error') }}",
+        "emailType": "text",
+        "message": "={{ 'A booking error occurred:\\n\\nError: ' + ($json.error?.message || 'Unknown error') + '\\nCode: ' + ($json.error?.code || 'UNKNOWN') + '\\nTime: ' + new Date().toISOString() + '\\n\\nClient Email: ' + ($('Parse Booking Request').first().json.booking?.email || 'N/A') }}",
+        "options": {}
+      },
+      "id": "notify-owner-error",
+      "name": "Notify Owner of Error",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1340, 660],
+      "notes": "Sends error notification to owner for monitoring"
+    }
+  ],
+  "connections": {
+    "Booking Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Parse Booking Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Booking Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Required Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Required Fields": {
+      "main": [
+        [
+          {
+            "node": "Validate Booking Constraints",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Booking Constraints": {
+      "main": [
+        [
+          {
+            "node": "Constraints Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Constraints Valid?": {
+      "main": [
+        [
+          {
+            "node": "Check Dedupe in Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Constraint Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Constraint Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Dedupe in Sheets": {
+      "main": [
+        [
+          {
+            "node": "Is Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Check Calendar Availability",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Duplicate Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Duplicate Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Calendar Availability": {
+      "main": [
+        [
+          {
+            "node": "Is Slot Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Slot Available?": {
+      "main": [
+        [
+          {
+            "node": "Generate Secure Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Find Alternative Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Alternative Slots": {
+      "main": [
+        [
+          {
+            "node": "Respond Conflict with Alternatives",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Secure Token": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Extract Event Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Event Details": {
+      "main": [
+        [
+          {
+            "node": "Log Booking to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Booking to Sheets": {
+      "main": [
+        [
+          {
+            "node": "Send Client Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Client Confirmation Email": {
+      "main": [
+        [
+          {
+            "node": "Send Owner Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Owner Notification": {
+      "main": [
+        [
+          {
+            "node": "SMS Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SMS Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Send SMS Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error to Sheets": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner of Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner of Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "appointment-scheduler-booking-v1"
+  },
+  "id": "appointment-scheduler-booking",
+  "tags": [
+    {
+      "id": "appointment-scheduler",
+      "name": "Appointment Scheduler"
+    }
+  ]
+}

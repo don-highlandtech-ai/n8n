@@ -1,0 +1,553 @@
+{
+  "name": "Appointment Scheduler - Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "timezone",
+              "name": "config.timezone",
+              "value": "America/New_York",
+              "type": "string"
+            },
+            {
+              "id": "calendarId",
+              "name": "config.calendarId",
+              "value": "primary",
+              "type": "string"
+            },
+            {
+              "id": "reminderScheduleHours",
+              "name": "config.reminderScheduleHours",
+              "value": "={{ [24, 2] }}",
+              "type": "array"
+            },
+            {
+              "id": "useSms",
+              "name": "config.useSms",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "requireSmsConsent",
+              "name": "config.requireSmsConsent",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "ownerNotificationEmail",
+              "name": "config.ownerNotificationEmail",
+              "value": "your-email@example.com",
+              "type": "string"
+            },
+            {
+              "id": "fromEmailName",
+              "name": "config.fromEmailName",
+              "value": "Appointment Scheduler",
+              "type": "string"
+            },
+            {
+              "id": "sheetId",
+              "name": "config.sheetId",
+              "value": "YOUR_GOOGLE_SHEET_ID_HERE",
+              "type": "string"
+            },
+            {
+              "id": "sheetTabName",
+              "name": "config.sheetTabName",
+              "value": "Appointments",
+              "type": "string"
+            },
+            {
+              "id": "testMode",
+              "name": "config.testMode",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "businessName",
+              "name": "config.businessName",
+              "value": "Your Business Name",
+              "type": "string"
+            },
+            {
+              "id": "quietHoursStart",
+              "name": "config.quietHoursStart",
+              "value": "20:00",
+              "type": "string"
+            },
+            {
+              "id": "quietHoursEnd",
+              "name": "config.quietHoursEnd",
+              "value": "08:00",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-config-reminders",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300],
+      "notes": "CONFIGURATION NODE - Must match the booking workflow config.\n\nQuiet hours: No reminders sent between 20:00 and 08:00.\nIf reminder falls in quiet hours, it will be sent at 08:05."
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "notes": "Runs every 15 minutes to check for upcoming appointments that need reminders.\n\nYou can adjust the frequency if needed (e.g., every 30 minutes)."
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.config.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.config.sheetTabName }}",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "status",
+              "lookupValue": "Confirmed"
+            }
+          ]
+        },
+        "options": {
+          "returnAllMatches": true
+        }
+      },
+      "id": "get-upcoming-appointments",
+      "name": "Get Confirmed Appointments",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [680, 300],
+      "notes": "Retrieves all confirmed appointments from Google Sheets"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter appointments needing reminders\nconst config = $('Set Config').first().json.config;\nconst appointments = $input.all().map(item => item.json);\nconst now = new Date();\n\n// Calculate time windows for reminders\n// 24h reminder: appointments between 23h and 27h from now\n// 2h reminder: appointments between 1h30m and 3h30m from now\nconst reminder24hMinMs = 23 * 60 * 60 * 1000; // 23 hours\nconst reminder24hMaxMs = 27 * 60 * 60 * 1000; // 27 hours\nconst reminder2hMinMs = 1.5 * 60 * 60 * 1000;  // 1.5 hours\nconst reminder2hMaxMs = 3.5 * 60 * 60 * 1000;  // 3.5 hours\n\nconst remindersToSend = [];\n\nfor (const apt of appointments) {\n  const startTime = new Date(apt.start_time);\n  const timeUntilMs = startTime - now;\n  \n  // Skip past appointments\n  if (timeUntilMs < 0) continue;\n  \n  // Check 24h reminder\n  const needs24h = apt.reminder_24h_sent !== 'true' && \n                   apt.reminder_24h_sent !== true &&\n                   timeUntilMs >= reminder24hMinMs && \n                   timeUntilMs <= reminder24hMaxMs;\n  \n  // Check 2h reminder\n  const needs2h = apt.reminder_2h_sent !== 'true' && \n                  apt.reminder_2h_sent !== true &&\n                  timeUntilMs >= reminder2hMinMs && \n                  timeUntilMs <= reminder2hMaxMs;\n  \n  if (needs24h) {\n    remindersToSend.push({\n      ...apt,\n      reminderType: '24h',\n      reminderColumn: 'reminder_24h_sent',\n      config\n    });\n  }\n  \n  if (needs2h) {\n    remindersToSend.push({\n      ...apt,\n      reminderType: '2h',\n      reminderColumn: 'reminder_2h_sent',\n      config\n    });\n  }\n}\n\nif (remindersToSend.length === 0) {\n  return { json: { noReminders: true, message: 'No reminders to send at this time' } };\n}\n\nreturn remindersToSend.map(r => ({ json: r }));"
+      },
+      "id": "filter-needing-reminders",
+      "name": "Filter Appointments Needing Reminders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "notes": "Identifies appointments that need reminders:\n- 24h reminder: 23-27 hours before appointment\n- 2h reminder: 1.5-3.5 hours before appointment\n\nSkips if reminder already sent (checks flags in Sheets)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-reminders",
+              "leftValue": "={{ $json.noReminders !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "has-reminders-check",
+      "name": "Reminders to Send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300],
+      "notes": "Continues only if there are reminders to send"
+    },
+    {
+      "parameters": {},
+      "id": "no-action",
+      "name": "No Action Needed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1340, 480],
+      "notes": "Workflow ends here if no reminders needed"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check quiet hours and adjust send time if needed\nconst item = $input.first().json;\nconst config = item.config;\nconst now = new Date();\n\n// Parse quiet hours\nconst [quietStartHour, quietStartMin] = (config.quietHoursStart || '20:00').split(':').map(Number);\nconst [quietEndHour, quietEndMin] = (config.quietHoursEnd || '08:00').split(':').map(Number);\n\n// Get current hour in the configured timezone\n// For simplicity, we'll use UTC offset calculation\nconst currentHour = now.getHours();\nconst currentMin = now.getMinutes();\n\n// Check if current time is in quiet hours\n// Quiet hours span overnight (e.g., 20:00 to 08:00)\nlet inQuietHours = false;\n\nif (quietStartHour > quietEndHour) {\n  // Overnight quiet hours (e.g., 20:00 - 08:00)\n  inQuietHours = currentHour >= quietStartHour || currentHour < quietEndHour ||\n                 (currentHour === quietEndHour && currentMin < quietEndMin);\n} else {\n  // Same day quiet hours (e.g., 22:00 - 23:00)\n  inQuietHours = (currentHour > quietStartHour || (currentHour === quietStartHour && currentMin >= quietStartMin)) &&\n                 (currentHour < quietEndHour || (currentHour === quietEndHour && currentMin < quietEndMin));\n}\n\nif (inQuietHours) {\n  // We're in quiet hours - skip this reminder for now\n  // It will be picked up when quiet hours end\n  return {\n    json: {\n      ...item,\n      skipForQuietHours: true,\n      message: 'Skipping reminder due to quiet hours. Will send after ' + config.quietHoursEnd\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...item,\n    skipForQuietHours: false\n  }\n};"
+      },
+      "id": "check-quiet-hours",
+      "name": "Check Quiet Hours",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300],
+      "notes": "Checks if current time is within quiet hours (20:00 - 08:00).\nIf so, skips sending the reminder until quiet hours end."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "not-quiet-hours",
+              "leftValue": "={{ $json.skipForQuietHours }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "quiet-hours-check",
+      "name": "Outside Quiet Hours?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300],
+      "notes": "Only sends reminders if outside quiet hours"
+    },
+    {
+      "parameters": {},
+      "id": "skip-quiet-hours",
+      "name": "Skip - In Quiet Hours",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1780, 480],
+      "notes": "Reminder skipped due to quiet hours"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.config.testMode ? $json.config.ownerNotificationEmail : $json.client_email }}",
+        "subject": "={{ 'Reminder: Your ' + $json.service_type + ' ' + ($json.reminderType === '24h' ? 'Tomorrow' : 'Coming Up Soon') }}",
+        "emailType": "html",
+        "message": "={{ '<h2>Appointment Reminder</h2>' + '<p>Hello ' + $json.client_first_name + ',</p>' + ($json.reminderType === '24h' ? '<p>This is a friendly reminder that you have an appointment <strong>tomorrow</strong>.</p>' : '<p>This is a reminder that your appointment is <strong>coming up in about 2 hours</strong>.</p>') + '<div style=\"background: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0;\">' + '<p><strong>Service:</strong> ' + $json.service_type + '</p>' + '<p><strong>Date:</strong> ' + new Date($json.start_time).toLocaleDateString('en-US', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: $json.config.timezone}) + '</p>' + '<p><strong>Time:</strong> ' + new Date($json.start_time).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', timeZone: $json.config.timezone}) + ' - ' + new Date($json.end_time).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', timeZone: $json.config.timezone}) + '</p>' + '<p><strong>Timezone:</strong> ' + $json.config.timezone + '</p>' + ($json.meeting_link ? '<p><strong>Meeting Link:</strong> <a href=\"' + $json.meeting_link + '\">' + $json.meeting_link + '</a></p>' : '') + '</div>' + '<p><strong>Need to make changes?</strong></p>' + '<p><a href=\"' + $json.reschedule_url + '\" style=\"background: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;\">Reschedule</a> ' + '<a href=\"' + $json.cancel_url + '\" style=\"background: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;\">Cancel</a></p>' + '<p style=\"color: #666; font-size: 12px; margin-top: 30px;\">Appointment ID: ' + $json.appointment_id + '</p>' }}",
+        "options": {
+          "senderName": "={{ $json.config.fromEmailName }}"
+        }
+      },
+      "id": "send-reminder-email",
+      "name": "Send Reminder Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1780, 300],
+      "notes": "Sends reminder email to client with appointment details, meeting link, and reschedule/cancel options"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "sms-enabled",
+              "leftValue": "={{ $('Check Quiet Hours').first().json.config.useSms }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "has-phone",
+              "leftValue": "={{ $('Check Quiet Hours').first().json.client_phone }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "has-consent",
+              "leftValue": "={{ !$('Check Quiet Hours').first().json.config.requireSmsConsent || $('Check Quiet Hours').first().json.consent_sms === 'true' || $('Check Quiet Hours').first().json.consent_sms === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-sms-for-reminder",
+      "name": "Send SMS Reminder?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 300],
+      "notes": "Checks if SMS reminders should be sent"
+    },
+    {
+      "parameters": {
+        "from": "={{/* Your Twilio phone number */}}",
+        "to": "={{ $('Check Quiet Hours').first().json.client_phone }}",
+        "message": "={{ 'Reminder: ' + $('Check Quiet Hours').first().json.service_type + ' ' + ($('Check Quiet Hours').first().json.reminderType === '24h' ? 'tomorrow' : 'in ~2 hours') + ' at ' + new Date($('Check Quiet Hours').first().json.start_time).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', timeZone: $('Check Quiet Hours').first().json.config.timezone}) + '. ' + ($('Check Quiet Hours').first().json.meeting_link ? 'Link: ' + $('Check Quiet Hours').first().json.meeting_link : '') }}"
+      },
+      "id": "send-sms-reminder",
+      "name": "Send SMS Reminder",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [2220, 220],
+      "notes": "Sends SMS reminder via Twilio.\n\nRequires Twilio credentials and 'from' number to be configured."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Check Quiet Hours').first().json.config.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Check Quiet Hours').first().json.config.sheetTabName }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "appointment_id": "={{ $('Check Quiet Hours').first().json.appointment_id }}",
+            "reminder_24h_sent": "={{ $('Check Quiet Hours').first().json.reminderType === '24h' ? 'true' : $('Check Quiet Hours').first().json.reminder_24h_sent }}",
+            "reminder_2h_sent": "={{ $('Check Quiet Hours').first().json.reminderType === '2h' ? 'true' : $('Check Quiet Hours').first().json.reminder_2h_sent }}",
+            "last_action": "={{ 'Reminder ' + $('Check Quiet Hours').first().json.reminderType + ' sent' }}",
+            "last_action_ts": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [
+            "appointment_id"
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-reminder-flag",
+      "name": "Update Reminder Flag in Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2440, 300],
+      "notes": "Updates the reminder_24h_sent or reminder_2h_sent flag to prevent duplicate reminders"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Check Quiet Hours').first().json.config.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ReminderLog",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "appointment_id": "={{ $('Check Quiet Hours').first().json.appointment_id }}",
+            "client_email": "={{ $('Check Quiet Hours').first().json.client_email }}",
+            "reminder_type": "={{ $('Check Quiet Hours').first().json.reminderType }}",
+            "appointment_time": "={{ $('Check Quiet Hours').first().json.start_time }}",
+            "email_sent": "true",
+            "sms_sent": "={{ $('Send SMS Reminder?').first().json?.success || 'false' }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-reminder",
+      "name": "Log Reminder Sent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2660, 300],
+      "notes": "Logs reminder sends to ReminderLog tab for tracking and debugging"
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Get Confirmed Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Confirmed Appointments": {
+      "main": [
+        [
+          {
+            "node": "Filter Appointments Needing Reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Appointments Needing Reminders": {
+      "main": [
+        [
+          {
+            "node": "Reminders to Send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reminders to Send?": {
+      "main": [
+        [
+          {
+            "node": "Check Quiet Hours",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Action Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Quiet Hours": {
+      "main": [
+        [
+          {
+            "node": "Outside Quiet Hours?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outside Quiet Hours?": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip - In Quiet Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder Email": {
+      "main": [
+        [
+          {
+            "node": "Send SMS Reminder?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS Reminder?": {
+      "main": [
+        [
+          {
+            "node": "Send SMS Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Reminder Flag in Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS Reminder": {
+      "main": [
+        [
+          {
+            "node": "Update Reminder Flag in Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Reminder Flag in Sheets": {
+      "main": [
+        [
+          {
+            "node": "Log Reminder Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "appointment-scheduler-reminders-v1"
+  },
+  "id": "appointment-scheduler-reminders",
+  "tags": [
+    {
+      "id": "appointment-scheduler",
+      "name": "Appointment Scheduler"
+    }
+  ]
+}
