@@ -1,0 +1,911 @@
+{
+  "name": "Invoice & Billing - Payment Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-daily",
+      "name": "Daily at 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300],
+      "notes": "DAILY REMINDER CHECK\n\nRuns every day at 9:00 AM server time.\n\nTo change the time, modify the cron expression:\n- '0 9 * * *' = 9:00 AM daily\n- '0 8 * * 1-5' = 8:00 AM weekdays only\n- '0 10 * * *' = 10:00 AM daily"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-reminder-cadence",
+              "name": "config.reminderCadenceDays",
+              "value": "={{ [3, 7, 14] }}",
+              "type": "array"
+            },
+            {
+              "id": "cfg-weekly-after",
+              "name": "config.weeklyAfterDays",
+              "value": 21,
+              "type": "number"
+            },
+            {
+              "id": "cfg-final-notice-days",
+              "name": "config.finalNoticeDaysOverdue",
+              "value": 30,
+              "type": "number"
+            },
+            {
+              "id": "cfg-max-reminders",
+              "name": "config.maxReminders",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "cfg-sheet-id",
+              "name": "config.sheetId",
+              "value": "YOUR_GOOGLE_SHEET_ID_HERE",
+              "type": "string"
+            },
+            {
+              "id": "cfg-sheet-tab",
+              "name": "config.sheetTabName",
+              "value": "Invoice Log",
+              "type": "string"
+            },
+            {
+              "id": "cfg-owner-email",
+              "name": "config.ownerNotificationEmail",
+              "value": "owner@yourcompany.com",
+              "type": "string"
+            },
+            {
+              "id": "cfg-from-name",
+              "name": "config.fromEmailName",
+              "value": "Your Company Billing",
+              "type": "string"
+            },
+            {
+              "id": "cfg-reply-to",
+              "name": "config.replyToEmail",
+              "value": "billing@yourcompany.com",
+              "type": "string"
+            },
+            {
+              "id": "cfg-company-name",
+              "name": "config.companyName",
+              "value": "Your Company Name",
+              "type": "string"
+            },
+            {
+              "id": "cfg-company-address",
+              "name": "config.companyAddress",
+              "value": "123 Business St, City, State 12345",
+              "type": "string"
+            },
+            {
+              "id": "cfg-timezone",
+              "name": "config.timezone",
+              "value": "America/New_York",
+              "type": "string"
+            },
+            {
+              "id": "cfg-test-mode",
+              "name": "config.testMode",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "cfg-quiet-start",
+              "name": "config.quietHoursStart",
+              "value": 18,
+              "type": "number"
+            },
+            {
+              "id": "cfg-quiet-end",
+              "name": "config.quietHoursEnd",
+              "value": 8,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "load-config",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 300],
+      "notes": "REMINDER CONFIGURATION\n\nKey settings:\n- reminderCadenceDays: [3, 7, 14] days after invoice sent\n- weeklyAfterDays: After 21 days, send weekly reminders\n- finalNoticeDaysOverdue: 30 days for final notice\n- maxReminders: Stop after 10 reminders\n- testMode: Send all to owner email if true"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.config.sheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.config.sheetTabName }}"
+        },
+        "options": {
+          "outputFormatting": true
+        }
+      },
+      "id": "read-invoices",
+      "name": "Read All Invoices",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "status-unpaid",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "Unpaid",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "status-sent",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "Sent",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "status-partial",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "Partially Paid",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "status-overdue",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "Overdue",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "filter-unpaid",
+      "name": "Filter Unpaid Invoices",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [660, 300],
+      "notes": "FILTER FOR REMINDER-ELIGIBLE INVOICES\n\nOnly process invoices with status:\n- Sent\n- Unpaid\n- Partially Paid\n- Overdue\n\nPaid and Cancelled invoices are skipped."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "calc-days-since-sent",
+              "name": "calc.days_since_sent",
+              "value": "={{ Math.floor((Date.now() - new Date($json.timestamp_created).getTime()) / (1000 * 60 * 60 * 24)) }}",
+              "type": "number"
+            },
+            {
+              "id": "calc-days-overdue",
+              "name": "calc.days_overdue",
+              "value": "={{ Math.floor((Date.now() - new Date($json.due_date).getTime()) / (1000 * 60 * 60 * 24)) }}",
+              "type": "number"
+            },
+            {
+              "id": "calc-is-overdue",
+              "name": "calc.is_overdue",
+              "value": "={{ new Date($json.due_date) < new Date() }}",
+              "type": "boolean"
+            },
+            {
+              "id": "calc-reminder-count",
+              "name": "calc.reminder_count",
+              "value": "={{ Number($json.reminder_count) || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "calc-last-reminder-date",
+              "name": "calc.last_reminder_date",
+              "value": "={{ $json.last_reminder_ts || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "calc-days-since-reminder",
+              "name": "calc.days_since_last_reminder",
+              "value": "={{ $json.last_reminder_ts ? Math.floor((Date.now() - new Date($json.last_reminder_ts).getTime()) / (1000 * 60 * 60 * 24)) : 999 }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {
+          "includeBinary": true
+        },
+        "include": "all"
+      },
+      "id": "calculate-dates",
+      "name": "Calculate Date Metrics",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "not-sent-today",
+              "leftValue": "={{ $json.calc.days_since_last_reminder }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "under-max-reminders",
+              "leftValue": "={{ $json.calc.reminder_count }}",
+              "rightValue": "={{ $('Load Config').item.json.config.maxReminders }}",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "can-send-reminder",
+      "name": "Can Send Reminder Today?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1100, 300],
+      "notes": "REMINDER RATE LIMITING\n\nOnly allows one reminder per invoice per day.\n\nAlso checks max reminder limit to stop sending after a configured number of attempts."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ \nconst daysSinceSent = $json.calc.days_since_sent;\nconst daysOverdue = $json.calc.days_overdue;\nconst isOverdue = $json.calc.is_overdue;\nconst cadence = $('Load Config').item.json.config.reminderCadenceDays;\nconst weeklyAfter = $('Load Config').item.json.config.weeklyAfterDays;\nconst finalNoticeDays = $('Load Config').item.json.config.finalNoticeDaysOverdue;\n\nlet shouldSend = false;\nlet reminderType = '';\n\n// Check cadence reminders (3, 7, 14 days after sent)\nfor (const day of cadence) {\n  if (daysSinceSent === day) {\n    shouldSend = true;\n    reminderType = isOverdue ? 'past_due' : 'friendly';\n    break;\n  }\n}\n\n// Weekly reminders after cadence period\nif (!shouldSend && daysSinceSent >= weeklyAfter && (daysSinceSent - weeklyAfter) % 7 === 0) {\n  shouldSend = true;\n  reminderType = 'past_due';\n}\n\n// Final notice\nif (daysOverdue >= finalNoticeDays && $json.last_reminder_type !== 'final_notice') {\n  shouldSend = true;\n  reminderType = 'final_notice';\n}\n\n// Override: if overdue and no reminder sent yet\nif (isOverdue && !$json.last_reminder_ts) {\n  shouldSend = true;\n  reminderType = 'past_due';\n}\n\n{\n  should_send: shouldSend,\n  reminder_type: reminderType,\n  days_since_sent: daysSinceSent,\n  days_overdue: daysOverdue,\n  is_overdue: isOverdue\n}\n}}",
+        "options": {}
+      },
+      "id": "determine-reminder-type",
+      "name": "Determine Reminder Type",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1320, 200],
+      "notes": "REMINDER LOGIC\n\nDetermines which type of reminder to send:\n\n1. Friendly reminder: Before due date or shortly after\n2. Past due notice: After due date\n3. Final notice: 30+ days overdue\n\nSends on cadence days [3, 7, 14] then weekly."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "should-send",
+              "leftValue": "={{ $json.should_send }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "should-send-reminder",
+      "name": "Should Send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1540, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "is-friendly",
+              "leftValue": "={{ $json.reminder_type }}",
+              "rightValue": "friendly",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "switch-reminder-type",
+      "name": "Which Reminder Type?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1760, 100]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "friendly-to",
+              "name": "email.to",
+              "value": "={{ $('Load Config').item.json.config.testMode ? $('Load Config').item.json.config.ownerNotificationEmail : $('Calculate Date Metrics').item.json.client_email }}",
+              "type": "string"
+            },
+            {
+              "id": "friendly-subject",
+              "name": "email.subject",
+              "value": "={{ ($('Load Config').item.json.config.testMode ? '[TEST] ' : '') + 'Friendly Reminder: Invoice ' + $('Calculate Date Metrics').item.json.invoice_number + ' due ' + $('Calculate Date Metrics').item.json.due_date }}",
+              "type": "string"
+            },
+            {
+              "id": "friendly-body",
+              "name": "email.body",
+              "value": "={{ \n($('Load Config').item.json.config.testMode ? '<div style=\"background:#ffcc00;padding:10px;margin-bottom:20px;text-align:center;font-weight:bold;\">TEST MODE - Would send to: ' + $('Calculate Date Metrics').item.json.client_email + '</div>' : '') +\n`<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">\n  <h2>Friendly Payment Reminder</h2>\n  \n  <p>Dear ${$('Calculate Date Metrics').item.json.client_name},</p>\n  \n  <p>This is a friendly reminder that the following invoice is approaching its due date:</p>\n  \n  <table style=\"width:100%;border-collapse:collapse;margin:20px 0;background:#f9f9f9;\">\n    <tr>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>Invoice Number</strong></td>\n      <td style=\"padding:15px;border:1px solid #ddd;\">${$('Calculate Date Metrics').item.json.invoice_number}</td>\n    </tr>\n    <tr>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>Amount Due</strong></td>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>$${Number($('Calculate Date Metrics').item.json.balance_due || $('Calculate Date Metrics').item.json.total).toFixed(2)} ${$('Calculate Date Metrics').item.json.currency}</strong></td>\n    </tr>\n    <tr>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>Due Date</strong></td>\n      <td style=\"padding:15px;border:1px solid #ddd;\">${$('Calculate Date Metrics').item.json.due_date}</td>\n    </tr>\n  </table>\n  \n  ${$('Calculate Date Metrics').item.json.invoice_url ? '<p style=\"margin:20px 0;\"><a href=\"' + $('Calculate Date Metrics').item.json.invoice_url + '\" style=\"background:#4CAF50;color:white;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;\">View and Pay Invoice</a></p>' : ''}\n  \n  <p>If you have already submitted payment, please disregard this reminder. Payments may take a few days to process.</p>\n  \n  <p>If you have any questions, please reply to this email or contact us at ${$('Load Config').item.json.config.replyToEmail}.</p>\n  \n  <p>Thank you for your business!</p>\n  \n  <hr style=\"margin:30px 0;border:none;border-top:1px solid #ddd;\">\n  <p style=\"color:#666;font-size:12px;\">\n    ${$('Load Config').item.json.config.companyName}<br>\n    ${$('Load Config').item.json.config.companyAddress}\n  </p>\n</div>`\n}}",
+              "type": "string"
+            },
+            {
+              "id": "friendly-type",
+              "name": "email.reminder_type",
+              "value": "friendly",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "includeBinary": true
+        },
+        "include": "all"
+      },
+      "id": "prepare-friendly-email",
+      "name": "Prepare Friendly Reminder",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1980, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "is-final",
+              "leftValue": "={{ $json.reminder_type }}",
+              "rightValue": "final_notice",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-final-notice",
+      "name": "Is Final Notice?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1980, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "pastdue-to",
+              "name": "email.to",
+              "value": "={{ $('Load Config').item.json.config.testMode ? $('Load Config').item.json.config.ownerNotificationEmail : $('Calculate Date Metrics').item.json.client_email }}",
+              "type": "string"
+            },
+            {
+              "id": "pastdue-subject",
+              "name": "email.subject",
+              "value": "={{ ($('Load Config').item.json.config.testMode ? '[TEST] ' : '') + 'Past Due Notice: Invoice ' + $('Calculate Date Metrics').item.json.invoice_number + ' - Payment Required' }}",
+              "type": "string"
+            },
+            {
+              "id": "pastdue-body",
+              "name": "email.body",
+              "value": "={{ \n($('Load Config').item.json.config.testMode ? '<div style=\"background:#ffcc00;padding:10px;margin-bottom:20px;text-align:center;font-weight:bold;\">TEST MODE - Would send to: ' + $('Calculate Date Metrics').item.json.client_email + '</div>' : '') +\n`<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background:#fff3cd;border-left:4px solid #ffc107;padding:15px;margin-bottom:20px;\">\n    <strong>Payment Past Due</strong>\n  </div>\n  \n  <p>Dear ${$('Calculate Date Metrics').item.json.client_name},</p>\n  \n  <p>Our records indicate that the following invoice is now <strong>${$json.days_overdue} days past due</strong>:</p>\n  \n  <table style=\"width:100%;border-collapse:collapse;margin:20px 0;background:#fff3cd;\">\n    <tr>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>Invoice Number</strong></td>\n      <td style=\"padding:15px;border:1px solid #ddd;\">${$('Calculate Date Metrics').item.json.invoice_number}</td>\n    </tr>\n    <tr>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>Amount Due</strong></td>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong style=\"color:#d9534f;\">$${Number($('Calculate Date Metrics').item.json.balance_due || $('Calculate Date Metrics').item.json.total).toFixed(2)} ${$('Calculate Date Metrics').item.json.currency}</strong></td>\n    </tr>\n    <tr>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>Due Date</strong></td>\n      <td style=\"padding:15px;border:1px solid #ddd;\">${$('Calculate Date Metrics').item.json.due_date}</td>\n    </tr>\n    <tr>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>Days Overdue</strong></td>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong style=\"color:#d9534f;\">${$json.days_overdue} days</strong></td>\n    </tr>\n  </table>\n  \n  ${$('Calculate Date Metrics').item.json.invoice_url ? '<p style=\"margin:20px 0;\"><a href=\"' + $('Calculate Date Metrics').item.json.invoice_url + '\" style=\"background:#d9534f;color:white;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;\">Pay Now</a></p>' : ''}\n  \n  <p>Please submit payment at your earliest convenience to avoid any service interruptions or additional fees.</p>\n  \n  <p>If you have already submitted payment, please disregard this notice and allow time for processing. If you are experiencing difficulties, please contact us immediately to discuss payment arrangements.</p>\n  \n  <p>For questions or concerns, please reply to this email or contact us at ${$('Load Config').item.json.config.replyToEmail}.</p>\n  \n  <hr style=\"margin:30px 0;border:none;border-top:1px solid #ddd;\">\n  <p style=\"color:#666;font-size:12px;\">\n    ${$('Load Config').item.json.config.companyName}<br>\n    ${$('Load Config').item.json.config.companyAddress}\n  </p>\n</div>`\n}}",
+              "type": "string"
+            },
+            {
+              "id": "pastdue-type",
+              "name": "email.reminder_type",
+              "value": "past_due",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "includeBinary": true
+        },
+        "include": "all"
+      },
+      "id": "prepare-pastdue-email",
+      "name": "Prepare Past Due Notice",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2200, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "final-to",
+              "name": "email.to",
+              "value": "={{ $('Load Config').item.json.config.testMode ? $('Load Config').item.json.config.ownerNotificationEmail : $('Calculate Date Metrics').item.json.client_email }}",
+              "type": "string"
+            },
+            {
+              "id": "final-subject",
+              "name": "email.subject",
+              "value": "={{ ($('Load Config').item.json.config.testMode ? '[TEST] ' : '') + 'FINAL NOTICE: Invoice ' + $('Calculate Date Metrics').item.json.invoice_number + ' - Immediate Payment Required' }}",
+              "type": "string"
+            },
+            {
+              "id": "final-body",
+              "name": "email.body",
+              "value": "={{ \n($('Load Config').item.json.config.testMode ? '<div style=\"background:#ffcc00;padding:10px;margin-bottom:20px;text-align:center;font-weight:bold;\">TEST MODE - Would send to: ' + $('Calculate Date Metrics').item.json.client_email + '</div>' : '') +\n`<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background:#f8d7da;border-left:4px solid #d9534f;padding:15px;margin-bottom:20px;\">\n    <strong style=\"color:#d9534f;\">FINAL NOTICE - Immediate Action Required</strong>\n  </div>\n  \n  <p>Dear ${$('Calculate Date Metrics').item.json.client_name},</p>\n  \n  <p>Despite our previous reminders, the following invoice remains unpaid and is now <strong>${$json.days_overdue} days past due</strong>:</p>\n  \n  <table style=\"width:100%;border-collapse:collapse;margin:20px 0;background:#f8d7da;\">\n    <tr>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>Invoice Number</strong></td>\n      <td style=\"padding:15px;border:1px solid #ddd;\">${$('Calculate Date Metrics').item.json.invoice_number}</td>\n    </tr>\n    <tr>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>Amount Due</strong></td>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong style=\"color:#d9534f;font-size:18px;\">$${Number($('Calculate Date Metrics').item.json.balance_due || $('Calculate Date Metrics').item.json.total).toFixed(2)} ${$('Calculate Date Metrics').item.json.currency}</strong></td>\n    </tr>\n    <tr>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>Original Due Date</strong></td>\n      <td style=\"padding:15px;border:1px solid #ddd;\">${$('Calculate Date Metrics').item.json.due_date}</td>\n    </tr>\n    <tr>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong>Days Overdue</strong></td>\n      <td style=\"padding:15px;border:1px solid #ddd;\"><strong style=\"color:#d9534f;\">${$json.days_overdue} days</strong></td>\n    </tr>\n  </table>\n  \n  <p style=\"background:#f8d7da;padding:15px;border-radius:5px;\">\n    <strong>This is your final notice before we escalate this matter.</strong> Failure to remit payment within the next 7 days may result in:\n    <ul>\n      <li>Suspension of services</li>\n      <li>Reporting to credit agencies</li>\n      <li>Referral to collections</li>\n    </ul>\n  </p>\n  \n  ${$('Calculate Date Metrics').item.json.invoice_url ? '<p style=\"margin:20px 0;\"><a href=\"' + $('Calculate Date Metrics').item.json.invoice_url + '\" style=\"background:#d9534f;color:white;padding:15px 30px;text-decoration:none;border-radius:4px;display:inline-block;font-weight:bold;\">PAY NOW</a></p>' : ''}\n  \n  <p>If you are experiencing financial difficulties, please contact us immediately at ${$('Load Config').item.json.config.replyToEmail} to discuss payment arrangements. We are willing to work with you to resolve this matter.</p>\n  \n  <p>If payment has already been submitted, please contact us with confirmation details so we can update our records.</p>\n  \n  <hr style=\"margin:30px 0;border:none;border-top:1px solid #ddd;\">\n  <p style=\"color:#666;font-size:12px;\">\n    ${$('Load Config').item.json.config.companyName}<br>\n    ${$('Load Config').item.json.config.companyAddress}\n  </p>\n</div>`\n}}",
+              "type": "string"
+            },
+            {
+              "id": "final-type",
+              "name": "email.reminder_type",
+              "value": "final_notice",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "includeBinary": true
+        },
+        "include": "all"
+      },
+      "id": "prepare-final-email",
+      "name": "Prepare Final Notice",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2200, 100]
+    },
+    {
+      "parameters": {},
+      "id": "merge-emails",
+      "name": "Merge Prepared Emails",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2440, 100]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email.to }}",
+        "subject": "={{ $json.email.subject }}",
+        "message": "={{ $json.email.body }}",
+        "options": {
+          "replyTo": "={{ $('Load Config').item.json.config.replyToEmail }}",
+          "senderName": "={{ $('Load Config').item.json.config.fromEmailName }}"
+        }
+      },
+      "id": "send-reminder-email",
+      "name": "Send Reminder Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2660, 100],
+      "notes": "SEND REMINDER EMAIL\n\nConnect your Gmail OAuth credential.\n\nIn test mode, all emails go to the owner."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Load Config').item.json.config.sheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Load Config').item.json.config.sheetTabName }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "last_reminder_type": "={{ $json.email.reminder_type }}",
+            "last_reminder_ts": "={{ new Date().toISOString() }}",
+            "reminder_count": "={{ ($('Calculate Date Metrics').item.json.calc.reminder_count || 0) + 1 }}"
+          },
+          "matchingColumns": ["dedupe_key"],
+          "schema": [
+            {"id": "dedupe_key", "displayName": "dedupe_key", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true},
+            {"id": "last_reminder_type", "displayName": "last_reminder_type", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false},
+            {"id": "last_reminder_ts", "displayName": "last_reminder_ts", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false},
+            {"id": "reminder_count", "displayName": "reminder_count", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": false}
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-reminder-log",
+      "name": "Update Reminder Log in Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2880, 100],
+      "notes": "LOG REMINDER SENT\n\nUpdates the invoice log with:\n- last_reminder_type\n- last_reminder_ts (timestamp)\n- reminder_count (incremented)"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "summary-total",
+              "name": "summary.invoices_checked",
+              "value": "={{ $('Filter Unpaid Invoices').all().length }}",
+              "type": "number"
+            },
+            {
+              "id": "summary-sent",
+              "name": "summary.reminders_sent",
+              "value": "={{ $('Send Reminder Email').all().length }}",
+              "type": "number"
+            },
+            {
+              "id": "summary-ts",
+              "name": "summary.run_timestamp",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "run-summary",
+      "name": "Run Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [3100, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "skip-reason",
+              "name": "skipped.reason",
+              "value": "Already sent reminder today or max reminders reached",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "includeBinary": true
+        },
+        "include": "all"
+      },
+      "id": "skip-reminder",
+      "name": "Skip - Already Sent Today",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1320, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "skip-not-due",
+              "name": "skipped.reason",
+              "value": "Not due for reminder based on cadence",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "includeBinary": true
+        },
+        "include": "all"
+      },
+      "id": "skip-not-due",
+      "name": "Skip - Not Due for Reminder",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1760, 300]
+    }
+  ],
+  "connections": {
+    "Daily at 9 AM": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config": {
+      "main": [
+        [
+          {
+            "node": "Read All Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read All Invoices": {
+      "main": [
+        [
+          {
+            "node": "Filter Unpaid Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Unpaid Invoices": {
+      "main": [
+        [
+          {
+            "node": "Calculate Date Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Date Metrics": {
+      "main": [
+        [
+          {
+            "node": "Can Send Reminder Today?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Send Reminder Today?": {
+      "main": [
+        [
+          {
+            "node": "Determine Reminder Type",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip - Already Sent Today",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determine Reminder Type": {
+      "main": [
+        [
+          {
+            "node": "Should Send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send?": {
+      "main": [
+        [
+          {
+            "node": "Which Reminder Type?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip - Not Due for Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Which Reminder Type?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Friendly Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Final Notice?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Friendly Reminder": {
+      "main": [
+        [
+          {
+            "node": "Merge Prepared Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Final Notice?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Final Notice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Past Due Notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Final Notice": {
+      "main": [
+        [
+          {
+            "node": "Merge Prepared Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Past Due Notice": {
+      "main": [
+        [
+          {
+            "node": "Merge Prepared Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Prepared Emails": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder Email": {
+      "main": [
+        [
+          {
+            "node": "Update Reminder Log in Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Reminder Log in Sheet": {
+      "main": [
+        [
+          {
+            "node": "Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip - Already Sent Today": {
+      "main": [
+        [
+          {
+            "node": "Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip - Not Due for Reminder": {
+      "main": [
+        [
+          {
+            "node": "Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "invoice-reminder-system-v1"
+  },
+  "tags": [
+    {
+      "name": "billing",
+      "id": "tag-billing"
+    },
+    {
+      "name": "automation",
+      "id": "tag-automation"
+    }
+  ]
+}

@@ -1,0 +1,1171 @@
+[
+  {
+    "name": "Invoice & Billing Automation - Main Workflow",
+    "nodes": [
+      {
+        "parameters": {},
+        "id": "config-node",
+        "name": "Set Config",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [0, 300],
+        "notes": "CONFIGURATION NODE - Edit these values to customize your invoice automation.\n\n1. invoicingProvider: Choose 'quickbooks', 'stripe', or 'pdf_only'\n2. crmProvider: Choose 'hubspot', 'airtable', or 'manual'\n3. sheetId: Your Google Sheets ID (from the URL)\n4. driveRootFolderId: Optional Google Drive folder for PDFs\n5. ownerNotificationEmail: Your email for alerts\n6. testMode: Set to true to send all emails to yourself first"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "cfg-invoicing-provider", "name": "config.invoicingProvider", "value": "quickbooks", "type": "string"},
+              {"id": "cfg-crm-provider", "name": "config.crmProvider", "value": "hubspot", "type": "string"},
+              {"id": "cfg-currency", "name": "config.currency", "value": "USD", "type": "string"},
+              {"id": "cfg-payment-terms", "name": "config.paymentTermsDays", "value": 14, "type": "number"},
+              {"id": "cfg-reminder-cadence", "name": "config.reminderCadenceDays", "value": "={{ [3, 7, 14] }}", "type": "array"},
+              {"id": "cfg-late-fee-enabled", "name": "config.lateFeeEnabled", "value": false, "type": "boolean"},
+              {"id": "cfg-late-fee-type", "name": "config.lateFeeType", "value": "percent", "type": "string"},
+              {"id": "cfg-late-fee-amount", "name": "config.lateFeeAmount", "value": 0, "type": "number"},
+              {"id": "cfg-from-email-name", "name": "config.fromEmailName", "value": "Your Company Billing", "type": "string"},
+              {"id": "cfg-reply-to-email", "name": "config.replyToEmail", "value": "billing@yourcompany.com", "type": "string"},
+              {"id": "cfg-owner-email", "name": "config.ownerNotificationEmail", "value": "owner@yourcompany.com", "type": "string"},
+              {"id": "cfg-sheet-id", "name": "config.sheetId", "value": "YOUR_GOOGLE_SHEET_ID_HERE", "type": "string"},
+              {"id": "cfg-sheet-tab", "name": "config.sheetTabName", "value": "Invoice Log", "type": "string"},
+              {"id": "cfg-drive-folder", "name": "config.driveRootFolderId", "value": "", "type": "string"},
+              {"id": "cfg-timezone", "name": "config.timezone", "value": "America/New_York", "type": "string"},
+              {"id": "cfg-test-mode", "name": "config.testMode", "value": true, "type": "boolean"},
+              {"id": "cfg-pdf-template", "name": "config.pdfTemplateMode", "value": "simple", "type": "string"},
+              {"id": "cfg-company-name", "name": "config.companyName", "value": "Your Company Name", "type": "string"},
+              {"id": "cfg-company-address", "name": "config.companyAddress", "value": "123 Business St, City, State 12345", "type": "string"},
+              {"id": "cfg-escalation-days", "name": "config.escalationDaysOverdue", "value": 14, "type": "number"}
+            ]
+          },
+          "options": {}
+        },
+        "id": "set-config",
+        "name": "Load Config",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [220, 300]
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "invoice-trigger",
+          "options": {"responseMode": "lastNode"}
+        },
+        "id": "webhook-trigger",
+        "name": "Webhook Trigger",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [0, 100],
+        "webhookId": "invoice-billing-webhook",
+        "notes": "WEBHOOK TRIGGER\n\nSend POST requests to this webhook URL with the invoice payload.\n\nRequired fields:\n- client_name\n- client_email\n- billable_event_id\n- items (array)\n- total\n\nOptional fields:\n- client_company, client_id\n- invoice_number_optional\n- subtotal, tax, discount\n- notes, po_number\n- service_period_start/end"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "norm-client-name", "name": "invoice.client_name", "value": "={{ $json.body?.client_name || $json.client_name || 'Unknown Client' }}", "type": "string"},
+              {"id": "norm-client-email", "name": "invoice.client_email", "value": "={{ $json.body?.client_email || $json.client_email || '' }}", "type": "string"},
+              {"id": "norm-client-company", "name": "invoice.client_company", "value": "={{ $json.body?.client_company || $json.client_company || '' }}", "type": "string"},
+              {"id": "norm-client-id", "name": "invoice.client_id", "value": "={{ $json.body?.client_id || $json.client_id || $json.body?.client_email || $json.client_email || '' }}", "type": "string"},
+              {"id": "norm-event-id", "name": "invoice.billable_event_id", "value": "={{ $json.body?.billable_event_id || $json.billable_event_id || '' }}", "type": "string"},
+              {"id": "norm-invoice-num", "name": "invoice.invoice_number", "value": "={{ $json.body?.invoice_number_optional || $json.invoice_number_optional || 'INV-' + Date.now() }}", "type": "string"},
+              {"id": "norm-items", "name": "invoice.items", "value": "={{ $json.body?.items || $json.items || [] }}", "type": "array"},
+              {"id": "norm-subtotal", "name": "invoice.subtotal", "value": "={{ Number($json.body?.subtotal || $json.subtotal || 0) }}", "type": "number"},
+              {"id": "norm-tax", "name": "invoice.tax", "value": "={{ Number($json.body?.tax || $json.tax || 0) }}", "type": "number"},
+              {"id": "norm-discount", "name": "invoice.discount", "value": "={{ Number($json.body?.discount || $json.discount || 0) }}", "type": "number"},
+              {"id": "norm-total", "name": "invoice.total", "value": "={{ Number($json.body?.total || $json.total || 0) }}", "type": "number"},
+              {"id": "norm-notes", "name": "invoice.notes", "value": "={{ $json.body?.notes || $json.notes || '' }}", "type": "string"},
+              {"id": "norm-po", "name": "invoice.po_number", "value": "={{ $json.body?.po_number || $json.po_number || '' }}", "type": "string"},
+              {"id": "norm-period-start", "name": "invoice.service_period_start", "value": "={{ $json.body?.service_period_start || $json.service_period_start || '' }}", "type": "string"},
+              {"id": "norm-period-end", "name": "invoice.service_period_end", "value": "={{ $json.body?.service_period_end || $json.service_period_end || '' }}", "type": "string"},
+              {"id": "norm-source", "name": "invoice.source", "value": "webhook", "type": "string"}
+            ]
+          },
+          "options": {}
+        },
+        "id": "normalize-webhook",
+        "name": "Normalize Webhook Data",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [220, 100]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "calc-due-date", "name": "invoice.due_date", "value": "={{ new Date(Date.now() + ($('Load Config').item.json.config.paymentTermsDays * 24 * 60 * 60 * 1000)).toISOString().split('T')[0] }}", "type": "string"},
+              {"id": "calc-dedupe-key", "name": "invoice.dedupe_key", "value": "={{ $json.invoice.client_id + '_' + $json.invoice.billable_event_id + '_' + $json.invoice.total + '_' + new Date(Date.now() + ($('Load Config').item.json.config.paymentTermsDays * 24 * 60 * 60 * 1000)).toISOString().split('T')[0] }}", "type": "string"},
+              {"id": "calc-created-ts", "name": "invoice.timestamp_created", "value": "={{ new Date().toISOString() }}", "type": "string"},
+              {"id": "calc-currency", "name": "invoice.currency", "value": "={{ $('Load Config').item.json.config.currency }}", "type": "string"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "calculate-fields",
+        "name": "Calculate Due Date and Dedupe Key",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [660, 300]
+      },
+      {
+        "parameters": {
+          "operation": "search",
+          "documentId": {"__rl": true, "mode": "id", "value": "={{ $('Load Config').item.json.config.sheetId }}"},
+          "sheetName": {"__rl": true, "mode": "name", "value": "={{ $('Load Config').item.json.config.sheetTabName }}"},
+          "filtersUI": {"values": [{"lookupColumn": "dedupe_key", "lookupValue": "={{ $json.invoice.dedupe_key }}"}]},
+          "options": {}
+        },
+        "id": "check-dedupe",
+        "name": "Check Dedupe in Sheet",
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [880, 300],
+        "notes": "DEDUPE CHECK - Searches for existing record with same dedupe_key to prevent duplicates."
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+            "conditions": [{"id": "dedupe-check", "leftValue": "={{ $json.length }}", "rightValue": 0, "operator": {"type": "number", "operation": "equals"}}],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "is-duplicate",
+        "name": "Is New Invoice?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [1100, 300]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [{"id": "provider-qbo", "leftValue": "={{ $('Load Config').item.json.config.invoicingProvider }}", "rightValue": "quickbooks", "operator": {"type": "string", "operation": "equals"}}],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "provider-switch-qbo",
+        "name": "Is QuickBooks?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [1320, 200]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [{"id": "provider-stripe", "leftValue": "={{ $('Load Config').item.json.config.invoicingProvider }}", "rightValue": "stripe", "operator": {"type": "string", "operation": "equals"}}],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "provider-switch-stripe",
+        "name": "Is Stripe?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [1320, 500]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://quickbooks.api.intuit.com/v3/company/YOUR_COMPANY_ID/invoice",
+          "authentication": "oAuth2Api",
+          "sendHeaders": true,
+          "headerParameters": {"parameters": [{"name": "Content-Type", "value": "application/json"}, {"name": "Accept", "value": "application/json"}]},
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ {\"Line\": $('Calculate Due Date and Dedupe Key').item.json.invoice.items.map((item, idx) => ({\"Amount\": item.amount || (item.quantity * item.unit_price), \"DetailType\": \"SalesItemLineDetail\", \"Description\": item.description, \"SalesItemLineDetail\": {\"Qty\": item.quantity || 1, \"UnitPrice\": item.unit_price || item.amount}})), \"CustomerRef\": {\"value\": $('Calculate Due Date and Dedupe Key').item.json.invoice.client_id || \"1\"}, \"BillEmail\": {\"Address\": $('Calculate Due Date and Dedupe Key').item.json.invoice.client_email}, \"DueDate\": $('Calculate Due Date and Dedupe Key').item.json.invoice.due_date, \"CustomerMemo\": {\"value\": $('Calculate Due Date and Dedupe Key').item.json.invoice.notes || \"\"}, \"DocNumber\": $('Calculate Due Date and Dedupe Key').item.json.invoice.invoice_number} }}",
+          "options": {}
+        },
+        "id": "create-qbo-invoice",
+        "name": "Create QuickBooks Invoice",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [1540, 100],
+        "notes": "QUICKBOOKS INVOICE CREATION\n\nReplace YOUR_COMPANY_ID with your QBO company ID.\nConnect QuickBooks OAuth2 credential.",
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "qbo-invoice-id", "name": "result.provider_invoice_id", "value": "={{ $json.Invoice?.Id || '' }}", "type": "string"},
+              {"id": "qbo-invoice-num", "name": "result.invoice_number", "value": "={{ $json.Invoice?.DocNumber || $('Calculate Due Date and Dedupe Key').item.json.invoice.invoice_number }}", "type": "string"},
+              {"id": "qbo-invoice-url", "name": "result.invoice_url", "value": "={{ 'https://app.qbo.intuit.com/app/invoice?txnId=' + ($json.Invoice?.Id || '') }}", "type": "string"},
+              {"id": "qbo-provider", "name": "result.provider", "value": "quickbooks", "type": "string"},
+              {"id": "qbo-status", "name": "result.status", "value": "Sent", "type": "string"},
+              {"id": "qbo-error", "name": "result.error", "value": "", "type": "string"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "map-qbo-result",
+        "name": "Map QuickBooks Result",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [1760, 100]
+      },
+      {
+        "parameters": {
+          "resource": "invoice",
+          "operation": "create",
+          "customer": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.client_id || $('Calculate Due Date and Dedupe Key').item.json.invoice.client_email }}",
+          "currency": "={{ $('Load Config').item.json.config.currency }}",
+          "daysUntilDue": "={{ $('Load Config').item.json.config.paymentTermsDays }}",
+          "additionalFields": {
+            "description": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.items.map(i => i.description).join(', ') }}",
+            "metadata": {"metadataProperties": [{"key": "billable_event_id", "value": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.billable_event_id }}"}, {"key": "dedupe_key", "value": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.dedupe_key }}"}]}
+          }
+        },
+        "id": "create-stripe-invoice",
+        "name": "Create Stripe Invoice",
+        "type": "n8n-nodes-base.stripe",
+        "typeVersion": 2,
+        "position": [1540, 400],
+        "notes": "STRIPE INVOICE CREATION\n\nConnect Stripe credential with API key.",
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "stripe-invoice-id", "name": "result.provider_invoice_id", "value": "={{ $json.id || '' }}", "type": "string"},
+              {"id": "stripe-invoice-num", "name": "result.invoice_number", "value": "={{ $json.number || $('Calculate Due Date and Dedupe Key').item.json.invoice.invoice_number }}", "type": "string"},
+              {"id": "stripe-invoice-url", "name": "result.invoice_url", "value": "={{ $json.hosted_invoice_url || '' }}", "type": "string"},
+              {"id": "stripe-provider", "name": "result.provider", "value": "stripe", "type": "string"},
+              {"id": "stripe-status", "name": "result.status", "value": "={{ $json.status === 'open' ? 'Sent' : 'Draft' }}", "type": "string"},
+              {"id": "stripe-error", "name": "result.error", "value": "", "type": "string"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "map-stripe-result",
+        "name": "Map Stripe Result",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [1760, 400]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "pdf-invoice-id", "name": "result.provider_invoice_id", "value": "={{ 'PDF-' + $('Calculate Due Date and Dedupe Key').item.json.invoice.invoice_number }}", "type": "string"},
+              {"id": "pdf-invoice-num", "name": "result.invoice_number", "value": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.invoice_number }}", "type": "string"},
+              {"id": "pdf-invoice-url", "name": "result.invoice_url", "value": "", "type": "string"},
+              {"id": "pdf-provider", "name": "result.provider", "value": "pdf_only", "type": "string"},
+              {"id": "pdf-status", "name": "result.status", "value": "Sent", "type": "string"},
+              {"id": "pdf-error", "name": "result.error", "value": "", "type": "string"},
+              {"id": "pdf-manual-note", "name": "result.manual_payment_note", "value": "Manual payment link needed - no automated payment provider configured", "type": "string"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "create-pdf-invoice",
+        "name": "Generate PDF Invoice Data",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [1540, 700],
+        "notes": "PDF ONLY MODE - Creates invoice data for HTML/PDF when no payment provider configured."
+      },
+      {
+        "parameters": {
+          "mode": "raw",
+          "jsonOutput": "={{ {\"html\": \"<!DOCTYPE html><html><head><style>body{font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:20px}.header{display:flex;justify-content:space-between;border-bottom:2px solid #333;padding-bottom:20px}.invoice-title{font-size:28px;font-weight:bold;color:#333}.items-table{width:100%;border-collapse:collapse;margin:20px 0}.items-table th,.items-table td{border:1px solid #ddd;padding:12px;text-align:left}.items-table th{background:#f5f5f5}.totals{text-align:right;margin-top:20px}.total-row{font-size:18px;font-weight:bold}.due-date{color:#d9534f;font-weight:bold}</style></head><body><div class='header'><div><div class='invoice-title'>INVOICE</div><div>Invoice #: \" + $('Calculate Due Date and Dedupe Key').item.json.invoice.invoice_number + \"</div><div>Date: \" + new Date().toLocaleDateString() + \"</div><div class='due-date'>Due Date: \" + $('Calculate Due Date and Dedupe Key').item.json.invoice.due_date + \"</div></div></div><table class='items-table'><thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>\" + $('Calculate Due Date and Dedupe Key').item.json.invoice.items.map(item => '<tr><td>' + item.description + '</td><td>' + (item.quantity || 1) + '</td><td>$' + (item.unit_price || item.amount).toFixed(2) + '</td><td>$' + (item.amount || item.quantity * item.unit_price).toFixed(2) + '</td></tr>').join('') + \"</tbody></table><div class='totals'><div class='total-row'>Total Due: $\" + $('Calculate Due Date and Dedupe Key').item.json.invoice.total.toFixed(2) + \" \" + $('Load Config').item.json.config.currency + \"</div></div></body></html>\"} }}",
+          "options": {}
+        },
+        "id": "generate-html-invoice",
+        "name": "Generate HTML Invoice",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [1760, 700]
+      },
+      {
+        "parameters": {},
+        "id": "merge-invoice-results",
+        "name": "Merge Invoice Results",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3,
+        "position": [2000, 400]
+      },
+      {
+        "parameters": {
+          "operation": "appendOrUpdate",
+          "documentId": {"__rl": true, "mode": "id", "value": "={{ $('Load Config').item.json.config.sheetId }}"},
+          "sheetName": {"__rl": true, "mode": "name", "value": "={{ $('Load Config').item.json.config.sheetTabName }}"},
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "timestamp_created": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.timestamp_created }}",
+              "billable_event_id": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.billable_event_id }}",
+              "dedupe_key": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.dedupe_key }}",
+              "client_name": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.client_name }}",
+              "client_email": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.client_email }}",
+              "total": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.total }}",
+              "currency": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.currency }}",
+              "invoice_number": "={{ $json.result.invoice_number }}",
+              "provider": "={{ $json.result.provider }}",
+              "provider_invoice_id": "={{ $json.result.provider_invoice_id }}",
+              "invoice_url": "={{ $json.result.invoice_url }}",
+              "due_date": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.due_date }}",
+              "status": "={{ $json.result.status }}",
+              "amount_paid": "=0",
+              "balance_due": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.total }}",
+              "last_reminder_type": "",
+              "last_reminder_ts": "",
+              "reminder_count": "=0",
+              "drive_url": "",
+              "notes": "={{ $('Calculate Due Date and Dedupe Key').item.json.invoice.notes }}",
+              "error": "={{ $json.result.error || '' }}"
+            },
+            "matchingColumns": ["dedupe_key"]
+          },
+          "options": {}
+        },
+        "id": "log-to-sheet",
+        "name": "Log Invoice to Sheet",
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [2220, 400],
+        "notes": "INVOICE LOG - Logs all invoice data to Google Sheet."
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "email-to", "name": "email.to", "value": "={{ $('Load Config').item.json.config.testMode ? $('Load Config').item.json.config.ownerNotificationEmail : $('Calculate Due Date and Dedupe Key').item.json.invoice.client_email }}", "type": "string"},
+              {"id": "email-subject", "name": "email.subject", "value": "={{ ($('Load Config').item.json.config.testMode ? '[TEST MODE] ' : '') + 'Invoice ' + $json.result.invoice_number + ' from ' + $('Load Config').item.json.config.companyName + ' due ' + $('Calculate Due Date and Dedupe Key').item.json.invoice.due_date }}", "type": "string"},
+              {"id": "email-body", "name": "email.body", "value": "={{ ($('Load Config').item.json.config.testMode ? '<div style=\"background:#ffcc00;padding:10px;margin-bottom:20px;text-align:center;font-weight:bold;\">TEST MODE - This email would go to: ' + $('Calculate Due Date and Dedupe Key').item.json.invoice.client_email + '</div>' : '') + '<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;\"><h2>Invoice from ' + $('Load Config').item.json.config.companyName + '</h2><p>Dear ' + $('Calculate Due Date and Dedupe Key').item.json.invoice.client_name + ',</p><p>Please find your invoice details below:</p><table style=\"width:100%;border-collapse:collapse;margin:20px 0;\"><tr style=\"background:#f5f5f5;\"><td style=\"padding:10px;border:1px solid #ddd;\"><strong>Invoice Number</strong></td><td style=\"padding:10px;border:1px solid #ddd;\">' + $json.result.invoice_number + '</td></tr><tr><td style=\"padding:10px;border:1px solid #ddd;\"><strong>Amount Due</strong></td><td style=\"padding:10px;border:1px solid #ddd;\"><strong>$' + $('Calculate Due Date and Dedupe Key').item.json.invoice.total.toFixed(2) + ' ' + $('Load Config').item.json.config.currency + '</strong></td></tr><tr style=\"background:#f5f5f5;\"><td style=\"padding:10px;border:1px solid #ddd;\"><strong>Due Date</strong></td><td style=\"padding:10px;border:1px solid #ddd;\">' + $('Calculate Due Date and Dedupe Key').item.json.invoice.due_date + '</td></tr></table>' + ($json.result.invoice_url ? '<p style=\"margin:20px 0;\"><a href=\"' + $json.result.invoice_url + '\" style=\"background:#4CAF50;color:white;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;\">View and Pay Invoice</a></p>' : '<p style=\"background:#fff3cd;padding:15px;border-radius:5px;\"><strong>Payment Instructions:</strong> Please contact us at ' + $('Load Config').item.json.config.replyToEmail + ' for payment details.</p>') + '<p>If you have any questions, please reply to this email or contact us at ' + $('Load Config').item.json.config.replyToEmail + '.</p><p>Thank you for your business!</p></div>' }}", "type": "string"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "prepare-email",
+        "name": "Prepare Invoice Email",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [2440, 400]
+      },
+      {
+        "parameters": {
+          "sendTo": "={{ $json.email.to }}",
+          "subject": "={{ $json.email.subject }}",
+          "message": "={{ $json.email.body }}",
+          "options": {
+            "replyTo": "={{ $('Load Config').item.json.config.replyToEmail }}",
+            "senderName": "={{ $('Load Config').item.json.config.fromEmailName }}"
+          }
+        },
+        "id": "send-gmail",
+        "name": "Send Invoice Email (Gmail)",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.1,
+        "position": [2660, 400],
+        "notes": "GMAIL SEND - Connect your Gmail OAuth credential.",
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "response-success", "name": "success", "value": true, "type": "boolean"},
+              {"id": "response-invoice", "name": "invoice_number", "value": "={{ $('Prepare Invoice Email').item.json.result.invoice_number }}", "type": "string"},
+              {"id": "response-status", "name": "status", "value": "={{ $('Prepare Invoice Email').item.json.result.status }}", "type": "string"},
+              {"id": "response-message", "name": "message", "value": "Invoice created and sent successfully", "type": "string"}
+            ]
+          },
+          "options": {}
+        },
+        "id": "success-response",
+        "name": "Success Response",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [2880, 300]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "dup-success", "name": "success", "value": true, "type": "boolean"},
+              {"id": "dup-message", "name": "message", "value": "Duplicate invoice detected - skipped creation", "type": "string"}
+            ]
+          },
+          "options": {}
+        },
+        "id": "duplicate-response",
+        "name": "Duplicate Response",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [1320, 700]
+      },
+      {
+        "parameters": {
+          "sendTo": "={{ $('Load Config').item.json.config.ownerNotificationEmail }}",
+          "subject": "={{ '[ALERT] Invoice Error - ' + $('Calculate Due Date and Dedupe Key').item.json.invoice.invoice_number }}",
+          "message": "={{ '<h2>Invoice Creation/Send Error</h2><p>An error occurred while processing an invoice:</p><ul><li><strong>Invoice Number:</strong> ' + $('Calculate Due Date and Dedupe Key').item.json.invoice.invoice_number + '</li><li><strong>Client:</strong> ' + $('Calculate Due Date and Dedupe Key').item.json.invoice.client_name + '</li><li><strong>Amount:</strong> $' + $('Calculate Due Date and Dedupe Key').item.json.invoice.total + '</li></ul><p><strong>Recommended Action:</strong> Check the n8n workflow execution log and retry manually.</p>' }}",
+          "options": {}
+        },
+        "id": "notify-error",
+        "name": "Notify Owner of Error",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.1,
+        "position": [2880, 500],
+        "notes": "ERROR NOTIFICATION - Sends alert when invoice creation or email fails."
+      },
+      {
+        "parameters": {
+          "eventsUi": {"eventValues": [{"name": "deal.propertyChange", "properties": ["dealstage"]}]}
+        },
+        "id": "hubspot-trigger",
+        "name": "HubSpot Deal Stage Change",
+        "type": "n8n-nodes-base.hubspotTrigger",
+        "typeVersion": 1,
+        "position": [0, 500],
+        "webhookId": "hubspot-deal-trigger",
+        "notes": "HUBSPOT CRM TRIGGER - Triggers on deal stage changes."
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [{"id": "stage-closedwon", "leftValue": "={{ $json.properties?.dealstage?.value }}", "rightValue": "closedwon", "operator": {"type": "string", "operation": "equals"}}],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "filter-closed-won",
+        "name": "Is Closed Won?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [220, 500],
+        "notes": "STAGE FILTER - Edit 'closedwon' to match your HubSpot deal stage ID."
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "hs-client-name", "name": "invoice.client_name", "value": "={{ $json.properties?.dealname?.value || 'Unknown' }}", "type": "string"},
+              {"id": "hs-client-email", "name": "invoice.client_email", "value": "={{ $json.associations?.contacts?.[0]?.email || '' }}", "type": "string"},
+              {"id": "hs-client-company", "name": "invoice.client_company", "value": "={{ $json.associations?.companies?.[0]?.name || '' }}", "type": "string"},
+              {"id": "hs-client-id", "name": "invoice.client_id", "value": "={{ $json.objectId || $json.dealId || '' }}", "type": "string"},
+              {"id": "hs-event-id", "name": "invoice.billable_event_id", "value": "={{ 'hs-deal-' + ($json.objectId || $json.dealId || Date.now()) }}", "type": "string"},
+              {"id": "hs-invoice-num", "name": "invoice.invoice_number", "value": "={{ 'INV-' + Date.now() }}", "type": "string"},
+              {"id": "hs-items", "name": "invoice.items", "value": "={{ [{ description: $json.properties?.dealname?.value || 'Services', quantity: 1, unit_price: Number($json.properties?.amount?.value || 0), amount: Number($json.properties?.amount?.value || 0) }] }}", "type": "array"},
+              {"id": "hs-subtotal", "name": "invoice.subtotal", "value": "={{ Number($json.properties?.amount?.value || 0) }}", "type": "number"},
+              {"id": "hs-tax", "name": "invoice.tax", "value": 0, "type": "number"},
+              {"id": "hs-discount", "name": "invoice.discount", "value": 0, "type": "number"},
+              {"id": "hs-total", "name": "invoice.total", "value": "={{ Number($json.properties?.amount?.value || 0) }}", "type": "number"},
+              {"id": "hs-notes", "name": "invoice.notes", "value": "={{ $json.properties?.description?.value || '' }}", "type": "string"},
+              {"id": "hs-po", "name": "invoice.po_number", "value": "", "type": "string"},
+              {"id": "hs-period-start", "name": "invoice.service_period_start", "value": "", "type": "string"},
+              {"id": "hs-period-end", "name": "invoice.service_period_end", "value": "", "type": "string"},
+              {"id": "hs-source", "name": "invoice.source", "value": "hubspot", "type": "string"}
+            ]
+          },
+          "options": {}
+        },
+        "id": "normalize-hubspot",
+        "name": "Normalize HubSpot Data",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [440, 500],
+        "notes": "HUBSPOT DATA MAPPING - Maps HubSpot deal properties to invoice format."
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "airtable-invoice-trigger",
+          "options": {}
+        },
+        "id": "airtable-trigger",
+        "name": "Airtable Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [0, 700],
+        "webhookId": "airtable-invoice-trigger",
+        "notes": "AIRTABLE CRM TRIGGER - Configure Airtable automation to send webhook."
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "at-client-name", "name": "invoice.client_name", "value": "={{ $json.body?.fields?.['Client Name'] || $json.fields?.['Client Name'] || 'Unknown' }}", "type": "string"},
+              {"id": "at-client-email", "name": "invoice.client_email", "value": "={{ $json.body?.fields?.['Client Email'] || $json.fields?.['Client Email'] || '' }}", "type": "string"},
+              {"id": "at-client-company", "name": "invoice.client_company", "value": "={{ $json.body?.fields?.['Company'] || $json.fields?.['Company'] || '' }}", "type": "string"},
+              {"id": "at-client-id", "name": "invoice.client_id", "value": "={{ $json.body?.id || $json.id || '' }}", "type": "string"},
+              {"id": "at-event-id", "name": "invoice.billable_event_id", "value": "={{ 'at-' + ($json.body?.id || $json.id || Date.now()) }}", "type": "string"},
+              {"id": "at-invoice-num", "name": "invoice.invoice_number", "value": "={{ $json.body?.fields?.['Invoice Number'] || $json.fields?.['Invoice Number'] || 'INV-' + Date.now() }}", "type": "string"},
+              {"id": "at-items", "name": "invoice.items", "value": "={{ [{ description: $json.body?.fields?.['Description'] || $json.fields?.['Description'] || 'Services', quantity: 1, unit_price: Number($json.body?.fields?.['Amount'] || $json.fields?.['Amount'] || 0), amount: Number($json.body?.fields?.['Amount'] || $json.fields?.['Amount'] || 0) }] }}", "type": "array"},
+              {"id": "at-subtotal", "name": "invoice.subtotal", "value": "={{ Number($json.body?.fields?.['Amount'] || $json.fields?.['Amount'] || 0) }}", "type": "number"},
+              {"id": "at-tax", "name": "invoice.tax", "value": 0, "type": "number"},
+              {"id": "at-discount", "name": "invoice.discount", "value": 0, "type": "number"},
+              {"id": "at-total", "name": "invoice.total", "value": "={{ Number($json.body?.fields?.['Amount'] || $json.fields?.['Amount'] || 0) }}", "type": "number"},
+              {"id": "at-notes", "name": "invoice.notes", "value": "={{ $json.body?.fields?.['Notes'] || $json.fields?.['Notes'] || '' }}", "type": "string"},
+              {"id": "at-po", "name": "invoice.po_number", "value": "={{ $json.body?.fields?.['PO Number'] || $json.fields?.['PO Number'] || '' }}", "type": "string"},
+              {"id": "at-period-start", "name": "invoice.service_period_start", "value": "", "type": "string"},
+              {"id": "at-period-end", "name": "invoice.service_period_end", "value": "", "type": "string"},
+              {"id": "at-source", "name": "invoice.source", "value": "airtable", "type": "string"}
+            ]
+          },
+          "options": {}
+        },
+        "id": "normalize-airtable",
+        "name": "Normalize Airtable Data",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [440, 700],
+        "notes": "AIRTABLE DATA MAPPING - Customize field names to match your Airtable base."
+      },
+      {
+        "parameters": {},
+        "id": "merge-sources",
+        "name": "Merge All Sources",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3,
+        "position": [660, 500]
+      }
+    ],
+    "connections": {
+      "Webhook Trigger": {"main": [[{"node": "Normalize Webhook Data", "type": "main", "index": 0}]]},
+      "Normalize Webhook Data": {"main": [[{"node": "Load Config", "type": "main", "index": 0}]]},
+      "Load Config": {"main": [[{"node": "Calculate Due Date and Dedupe Key", "type": "main", "index": 0}]]},
+      "Calculate Due Date and Dedupe Key": {"main": [[{"node": "Check Dedupe in Sheet", "type": "main", "index": 0}]]},
+      "Check Dedupe in Sheet": {"main": [[{"node": "Is New Invoice?", "type": "main", "index": 0}]]},
+      "Is New Invoice?": {"main": [[{"node": "Is QuickBooks?", "type": "main", "index": 0}, {"node": "Is Stripe?", "type": "main", "index": 0}], [{"node": "Duplicate Response", "type": "main", "index": 0}]]},
+      "Is QuickBooks?": {"main": [[{"node": "Create QuickBooks Invoice", "type": "main", "index": 0}], [{"node": "Is Stripe?", "type": "main", "index": 0}]]},
+      "Is Stripe?": {"main": [[{"node": "Create Stripe Invoice", "type": "main", "index": 0}], [{"node": "Generate PDF Invoice Data", "type": "main", "index": 0}]]},
+      "Create QuickBooks Invoice": {"main": [[{"node": "Map QuickBooks Result", "type": "main", "index": 0}], [{"node": "Notify Owner of Error", "type": "main", "index": 0}]]},
+      "Map QuickBooks Result": {"main": [[{"node": "Merge Invoice Results", "type": "main", "index": 0}]]},
+      "Create Stripe Invoice": {"main": [[{"node": "Map Stripe Result", "type": "main", "index": 0}], [{"node": "Notify Owner of Error", "type": "main", "index": 0}]]},
+      "Map Stripe Result": {"main": [[{"node": "Merge Invoice Results", "type": "main", "index": 0}]]},
+      "Generate PDF Invoice Data": {"main": [[{"node": "Generate HTML Invoice", "type": "main", "index": 0}]]},
+      "Generate HTML Invoice": {"main": [[{"node": "Merge Invoice Results", "type": "main", "index": 0}]]},
+      "Merge Invoice Results": {"main": [[{"node": "Log Invoice to Sheet", "type": "main", "index": 0}]]},
+      "Log Invoice to Sheet": {"main": [[{"node": "Prepare Invoice Email", "type": "main", "index": 0}]]},
+      "Prepare Invoice Email": {"main": [[{"node": "Send Invoice Email (Gmail)", "type": "main", "index": 0}]]},
+      "Send Invoice Email (Gmail)": {"main": [[{"node": "Success Response", "type": "main", "index": 0}], [{"node": "Notify Owner of Error", "type": "main", "index": 0}]]},
+      "HubSpot Deal Stage Change": {"main": [[{"node": "Is Closed Won?", "type": "main", "index": 0}]]},
+      "Is Closed Won?": {"main": [[{"node": "Normalize HubSpot Data", "type": "main", "index": 0}], []]},
+      "Normalize HubSpot Data": {"main": [[{"node": "Merge All Sources", "type": "main", "index": 0}]]},
+      "Airtable Webhook": {"main": [[{"node": "Normalize Airtable Data", "type": "main", "index": 0}]]},
+      "Normalize Airtable Data": {"main": [[{"node": "Merge All Sources", "type": "main", "index": 0}]]},
+      "Merge All Sources": {"main": [[{"node": "Load Config", "type": "main", "index": 0}]]}
+    },
+    "active": false,
+    "settings": {"executionOrder": "v1", "saveManualExecutions": true},
+    "versionId": "1",
+    "meta": {"instanceId": "invoice-billing-main-v1"},
+    "tags": [{"name": "billing", "id": "tag-billing"}, {"name": "automation", "id": "tag-automation"}]
+  },
+  {
+    "name": "Invoice & Billing - Payment Status Tracking",
+    "nodes": [
+      {
+        "parameters": {"rule": {"interval": [{"field": "hours", "hoursInterval": 6}]}},
+        "id": "cron-trigger",
+        "name": "Every 6 Hours",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [0, 300],
+        "notes": "PAYMENT STATUS POLLING - Runs every 6 hours to check payment status."
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "cfg-invoicing-provider", "name": "config.invoicingProvider", "value": "quickbooks", "type": "string"},
+              {"id": "cfg-sheet-id", "name": "config.sheetId", "value": "YOUR_GOOGLE_SHEET_ID_HERE", "type": "string"},
+              {"id": "cfg-sheet-tab", "name": "config.sheetTabName", "value": "Invoice Log", "type": "string"},
+              {"id": "cfg-owner-email", "name": "config.ownerNotificationEmail", "value": "owner@yourcompany.com", "type": "string"},
+              {"id": "cfg-escalation-days", "name": "config.escalationDaysOverdue", "value": 14, "type": "number"},
+              {"id": "cfg-timezone", "name": "config.timezone", "value": "America/New_York", "type": "string"}
+            ]
+          },
+          "options": {}
+        },
+        "id": "load-config",
+        "name": "Load Config",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [220, 300],
+        "notes": "CONFIGURATION - Must match settings from main workflow."
+      },
+      {
+        "parameters": {
+          "operation": "read",
+          "documentId": {"__rl": true, "mode": "id", "value": "={{ $json.config.sheetId }}"},
+          "sheetName": {"__rl": true, "mode": "name", "value": "={{ $json.config.sheetTabName }}"},
+          "options": {"outputFormatting": true}
+        },
+        "id": "read-all-invoices",
+        "name": "Read All Invoices from Sheet",
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [440, 300]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [
+              {"id": "status-unpaid", "leftValue": "={{ $json.status }}", "rightValue": "Unpaid", "operator": {"type": "string", "operation": "equals"}},
+              {"id": "status-sent", "leftValue": "={{ $json.status }}", "rightValue": "Sent", "operator": {"type": "string", "operation": "equals"}},
+              {"id": "status-partial", "leftValue": "={{ $json.status }}", "rightValue": "Partially Paid", "operator": {"type": "string", "operation": "equals"}},
+              {"id": "status-overdue", "leftValue": "={{ $json.status }}", "rightValue": "Overdue", "operator": {"type": "string", "operation": "equals"}}
+            ],
+            "combinator": "or"
+          },
+          "options": {}
+        },
+        "id": "filter-open-invoices",
+        "name": "Filter Open Invoices",
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2.2,
+        "position": [660, 300]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [{"id": "is-qbo", "leftValue": "={{ $json.provider }}", "rightValue": "quickbooks", "operator": {"type": "string", "operation": "equals"}}],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "check-provider-qbo",
+        "name": "Is QuickBooks?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [880, 200]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [{"id": "is-stripe", "leftValue": "={{ $json.provider }}", "rightValue": "stripe", "operator": {"type": "string", "operation": "equals"}}],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "check-provider-stripe",
+        "name": "Is Stripe?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [880, 400]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://quickbooks.api.intuit.com/v3/company/YOUR_COMPANY_ID/invoice/' + $json.provider_invoice_id }}",
+          "authentication": "oAuth2Api",
+          "sendHeaders": true,
+          "headerParameters": {"parameters": [{"name": "Accept", "value": "application/json"}]},
+          "options": {}
+        },
+        "id": "get-qbo-status",
+        "name": "Get QuickBooks Invoice Status",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [1100, 100],
+        "notes": "QUICKBOOKS STATUS CHECK - Replace YOUR_COMPANY_ID.",
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "qbo-new-status", "name": "updated.status", "value": "={{ $json.Invoice?.Balance === 0 ? 'Paid' : $json.Invoice?.Balance < $json.Invoice?.TotalAmt ? 'Partially Paid' : new Date($json.Invoice?.DueDate) < new Date() ? 'Overdue' : 'Unpaid' }}", "type": "string"},
+              {"id": "qbo-amount-paid", "name": "updated.amount_paid", "value": "={{ $json.Invoice?.TotalAmt - $json.Invoice?.Balance }}", "type": "number"},
+              {"id": "qbo-balance-due", "name": "updated.balance_due", "value": "={{ $json.Invoice?.Balance }}", "type": "number"},
+              {"id": "qbo-dedupe-key", "name": "updated.dedupe_key", "value": "={{ $('Filter Open Invoices').item.json.dedupe_key }}", "type": "string"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "map-qbo-status",
+        "name": "Map QuickBooks Status",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [1320, 100]
+      },
+      {
+        "parameters": {
+          "resource": "invoice",
+          "operation": "get",
+          "invoiceId": "={{ $json.provider_invoice_id }}"
+        },
+        "id": "get-stripe-status",
+        "name": "Get Stripe Invoice Status",
+        "type": "n8n-nodes-base.stripe",
+        "typeVersion": 2,
+        "position": [1100, 300],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "stripe-new-status", "name": "updated.status", "value": "={{ $json.status === 'paid' ? 'Paid' : $json.status === 'void' ? 'Cancelled' : $json.amount_remaining < $json.amount_due ? 'Partially Paid' : new Date($json.due_date * 1000) < new Date() ? 'Overdue' : 'Unpaid' }}", "type": "string"},
+              {"id": "stripe-amount-paid", "name": "updated.amount_paid", "value": "={{ ($json.amount_paid || 0) / 100 }}", "type": "number"},
+              {"id": "stripe-balance-due", "name": "updated.balance_due", "value": "={{ ($json.amount_remaining || 0) / 100 }}", "type": "number"},
+              {"id": "stripe-dedupe-key", "name": "updated.dedupe_key", "value": "={{ $('Filter Open Invoices').item.json.dedupe_key }}", "type": "string"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "map-stripe-status",
+        "name": "Map Stripe Status",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [1320, 300]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "pdf-new-status", "name": "updated.status", "value": "={{ new Date($json.due_date) < new Date() ? 'Overdue' : $json.status }}", "type": "string"},
+              {"id": "pdf-amount-paid", "name": "updated.amount_paid", "value": "={{ $json.amount_paid || 0 }}", "type": "number"},
+              {"id": "pdf-balance-due", "name": "updated.balance_due", "value": "={{ $json.balance_due || $json.total }}", "type": "number"},
+              {"id": "pdf-dedupe-key", "name": "updated.dedupe_key", "value": "={{ $json.dedupe_key }}", "type": "string"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "check-pdf-overdue",
+        "name": "Check PDF Only Overdue",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [1100, 500]
+      },
+      {
+        "parameters": {},
+        "id": "merge-statuses",
+        "name": "Merge All Statuses",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3,
+        "position": [1540, 300]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [{"id": "status-changed", "leftValue": "={{ $json.updated?.status }}", "rightValue": "={{ $('Filter Open Invoices').item.json.status }}", "operator": {"type": "string", "operation": "notEquals"}}],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "status-changed",
+        "name": "Status Changed?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [1760, 300]
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "documentId": {"__rl": true, "mode": "id", "value": "={{ $('Load Config').item.json.config.sheetId }}"},
+          "sheetName": {"__rl": true, "mode": "name", "value": "={{ $('Load Config').item.json.config.sheetTabName }}"},
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "status": "={{ $json.updated.status }}",
+              "amount_paid": "={{ $json.updated.amount_paid }}",
+              "balance_due": "={{ $json.updated.balance_due }}"
+            },
+            "matchingColumns": ["dedupe_key"]
+          },
+          "options": {}
+        },
+        "id": "update-sheet-status",
+        "name": "Update Sheet Status",
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [1980, 200]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [{"id": "is-paid", "leftValue": "={{ $json.updated.status }}", "rightValue": "Paid", "operator": {"type": "string", "operation": "equals"}}],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "is-now-paid",
+        "name": "Is Now Paid?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [2200, 100]
+      },
+      {
+        "parameters": {
+          "sendTo": "={{ $('Load Config').item.json.config.ownerNotificationEmail }}",
+          "subject": "={{ '[Payment Received] Invoice ' + $('Filter Open Invoices').item.json.invoice_number }}",
+          "message": "={{ '<h2>Payment Received</h2><p>Invoice ' + $('Filter Open Invoices').item.json.invoice_number + ' from ' + $('Filter Open Invoices').item.json.client_name + ' has been paid.</p><p>Amount: $' + $json.updated.amount_paid.toFixed(2) + '</p>' }}",
+          "options": {}
+        },
+        "id": "notify-payment-received",
+        "name": "Notify Payment Received",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.1,
+        "position": [2420, 0]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [
+              {"id": "escalation-check", "leftValue": "={{ Math.floor((Date.now() - new Date($('Filter Open Invoices').item.json.due_date).getTime()) / (1000 * 60 * 60 * 24)) }}", "rightValue": "={{ $('Load Config').item.json.config.escalationDaysOverdue }}", "operator": {"type": "number", "operation": "gte"}},
+              {"id": "is-overdue", "leftValue": "={{ $json.updated.status }}", "rightValue": "Overdue", "operator": {"type": "string", "operation": "equals"}}
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "needs-escalation",
+        "name": "Needs Escalation?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [2200, 300]
+      },
+      {
+        "parameters": {
+          "sendTo": "={{ $('Load Config').item.json.config.ownerNotificationEmail }}",
+          "subject": "={{ '[ESCALATION] Invoice ' + $('Filter Open Invoices').item.json.invoice_number + ' overdue ' + Math.floor((Date.now() - new Date($('Filter Open Invoices').item.json.due_date).getTime()) / (1000 * 60 * 60 * 24)) + ' days' }}",
+          "message": "={{ '<h2>Invoice Escalation Alert</h2><p>Invoice ' + $('Filter Open Invoices').item.json.invoice_number + ' is overdue and requires attention.</p><ul><li>Client: ' + $('Filter Open Invoices').item.json.client_name + '</li><li>Amount Due: $' + $json.updated.balance_due.toFixed(2) + '</li><li>Days Overdue: ' + Math.floor((Date.now() - new Date($('Filter Open Invoices').item.json.due_date).getTime()) / (1000 * 60 * 60 * 24)) + '</li></ul>' }}",
+          "options": {}
+        },
+        "id": "send-escalation",
+        "name": "Send Escalation Alert",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.1,
+        "position": [2420, 300]
+      }
+    ],
+    "connections": {
+      "Every 6 Hours": {"main": [[{"node": "Load Config", "type": "main", "index": 0}]]},
+      "Load Config": {"main": [[{"node": "Read All Invoices from Sheet", "type": "main", "index": 0}]]},
+      "Read All Invoices from Sheet": {"main": [[{"node": "Filter Open Invoices", "type": "main", "index": 0}]]},
+      "Filter Open Invoices": {"main": [[{"node": "Is QuickBooks?", "type": "main", "index": 0}, {"node": "Is Stripe?", "type": "main", "index": 0}]]},
+      "Is QuickBooks?": {"main": [[{"node": "Get QuickBooks Invoice Status", "type": "main", "index": 0}], []]},
+      "Is Stripe?": {"main": [[{"node": "Get Stripe Invoice Status", "type": "main", "index": 0}], [{"node": "Check PDF Only Overdue", "type": "main", "index": 0}]]},
+      "Get QuickBooks Invoice Status": {"main": [[{"node": "Map QuickBooks Status", "type": "main", "index": 0}], []]},
+      "Map QuickBooks Status": {"main": [[{"node": "Merge All Statuses", "type": "main", "index": 0}]]},
+      "Get Stripe Invoice Status": {"main": [[{"node": "Map Stripe Status", "type": "main", "index": 0}], []]},
+      "Map Stripe Status": {"main": [[{"node": "Merge All Statuses", "type": "main", "index": 0}]]},
+      "Check PDF Only Overdue": {"main": [[{"node": "Merge All Statuses", "type": "main", "index": 0}]]},
+      "Merge All Statuses": {"main": [[{"node": "Status Changed?", "type": "main", "index": 0}]]},
+      "Status Changed?": {"main": [[{"node": "Update Sheet Status", "type": "main", "index": 0}], []]},
+      "Update Sheet Status": {"main": [[{"node": "Is Now Paid?", "type": "main", "index": 0}, {"node": "Needs Escalation?", "type": "main", "index": 0}]]},
+      "Is Now Paid?": {"main": [[{"node": "Notify Payment Received", "type": "main", "index": 0}], []]},
+      "Needs Escalation?": {"main": [[{"node": "Send Escalation Alert", "type": "main", "index": 0}], []]}
+    },
+    "active": false,
+    "settings": {"executionOrder": "v1", "saveManualExecutions": true},
+    "versionId": "1",
+    "meta": {"instanceId": "invoice-payment-tracking-v1"},
+    "tags": [{"name": "billing", "id": "tag-billing"}]
+  },
+  {
+    "name": "Invoice & Billing - Payment Reminders",
+    "nodes": [
+      {
+        "parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "0 9 * * *"}]}},
+        "id": "cron-daily",
+        "name": "Daily at 9 AM",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [0, 300],
+        "notes": "DAILY REMINDER CHECK - Runs at 9:00 AM daily."
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "cfg-reminder-cadence", "name": "config.reminderCadenceDays", "value": "={{ [3, 7, 14] }}", "type": "array"},
+              {"id": "cfg-weekly-after", "name": "config.weeklyAfterDays", "value": 21, "type": "number"},
+              {"id": "cfg-final-notice-days", "name": "config.finalNoticeDaysOverdue", "value": 30, "type": "number"},
+              {"id": "cfg-max-reminders", "name": "config.maxReminders", "value": 10, "type": "number"},
+              {"id": "cfg-sheet-id", "name": "config.sheetId", "value": "YOUR_GOOGLE_SHEET_ID_HERE", "type": "string"},
+              {"id": "cfg-sheet-tab", "name": "config.sheetTabName", "value": "Invoice Log", "type": "string"},
+              {"id": "cfg-owner-email", "name": "config.ownerNotificationEmail", "value": "owner@yourcompany.com", "type": "string"},
+              {"id": "cfg-from-name", "name": "config.fromEmailName", "value": "Your Company Billing", "type": "string"},
+              {"id": "cfg-reply-to", "name": "config.replyToEmail", "value": "billing@yourcompany.com", "type": "string"},
+              {"id": "cfg-company-name", "name": "config.companyName", "value": "Your Company Name", "type": "string"},
+              {"id": "cfg-test-mode", "name": "config.testMode", "value": true, "type": "boolean"}
+            ]
+          },
+          "options": {}
+        },
+        "id": "load-config",
+        "name": "Load Config",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [220, 300],
+        "notes": "REMINDER CONFIGURATION"
+      },
+      {
+        "parameters": {
+          "operation": "read",
+          "documentId": {"__rl": true, "mode": "id", "value": "={{ $json.config.sheetId }}"},
+          "sheetName": {"__rl": true, "mode": "name", "value": "={{ $json.config.sheetTabName }}"},
+          "options": {"outputFormatting": true}
+        },
+        "id": "read-invoices",
+        "name": "Read All Invoices",
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [440, 300]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [
+              {"id": "status-unpaid", "leftValue": "={{ $json.status }}", "rightValue": "Unpaid", "operator": {"type": "string", "operation": "equals"}},
+              {"id": "status-sent", "leftValue": "={{ $json.status }}", "rightValue": "Sent", "operator": {"type": "string", "operation": "equals"}},
+              {"id": "status-partial", "leftValue": "={{ $json.status }}", "rightValue": "Partially Paid", "operator": {"type": "string", "operation": "equals"}},
+              {"id": "status-overdue", "leftValue": "={{ $json.status }}", "rightValue": "Overdue", "operator": {"type": "string", "operation": "equals"}}
+            ],
+            "combinator": "or"
+          },
+          "options": {}
+        },
+        "id": "filter-unpaid",
+        "name": "Filter Unpaid Invoices",
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2.2,
+        "position": [660, 300]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "calc-days-since-sent", "name": "calc.days_since_sent", "value": "={{ Math.floor((Date.now() - new Date($json.timestamp_created).getTime()) / (1000 * 60 * 60 * 24)) }}", "type": "number"},
+              {"id": "calc-days-overdue", "name": "calc.days_overdue", "value": "={{ Math.floor((Date.now() - new Date($json.due_date).getTime()) / (1000 * 60 * 60 * 24)) }}", "type": "number"},
+              {"id": "calc-is-overdue", "name": "calc.is_overdue", "value": "={{ new Date($json.due_date) < new Date() }}", "type": "boolean"},
+              {"id": "calc-reminder-count", "name": "calc.reminder_count", "value": "={{ Number($json.reminder_count) || 0 }}", "type": "number"},
+              {"id": "calc-days-since-reminder", "name": "calc.days_since_last_reminder", "value": "={{ $json.last_reminder_ts ? Math.floor((Date.now() - new Date($json.last_reminder_ts).getTime()) / (1000 * 60 * 60 * 24)) : 999 }}", "type": "number"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "calculate-dates",
+        "name": "Calculate Date Metrics",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [880, 300]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [
+              {"id": "not-sent-today", "leftValue": "={{ $json.calc.days_since_last_reminder }}", "rightValue": 1, "operator": {"type": "number", "operation": "gte"}},
+              {"id": "under-max-reminders", "leftValue": "={{ $json.calc.reminder_count }}", "rightValue": "={{ $('Load Config').item.json.config.maxReminders }}", "operator": {"type": "number", "operation": "lt"}}
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "can-send-reminder",
+        "name": "Can Send Reminder Today?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [1100, 300]
+      },
+      {
+        "parameters": {
+          "mode": "raw",
+          "jsonOutput": "={{ const daysSinceSent = $json.calc.days_since_sent; const daysOverdue = $json.calc.days_overdue; const isOverdue = $json.calc.is_overdue; const cadence = $('Load Config').item.json.config.reminderCadenceDays; const weeklyAfter = $('Load Config').item.json.config.weeklyAfterDays; const finalNoticeDays = $('Load Config').item.json.config.finalNoticeDaysOverdue; let shouldSend = false; let reminderType = ''; for (const day of cadence) { if (daysSinceSent === day) { shouldSend = true; reminderType = isOverdue ? 'past_due' : 'friendly'; break; } } if (!shouldSend && daysSinceSent >= weeklyAfter && (daysSinceSent - weeklyAfter) % 7 === 0) { shouldSend = true; reminderType = 'past_due'; } if (daysOverdue >= finalNoticeDays && $json.last_reminder_type !== 'final_notice') { shouldSend = true; reminderType = 'final_notice'; } if (isOverdue && !$json.last_reminder_ts) { shouldSend = true; reminderType = 'past_due'; } ({ should_send: shouldSend, reminder_type: reminderType, days_since_sent: daysSinceSent, days_overdue: daysOverdue, is_overdue: isOverdue }) }}",
+          "options": {}
+        },
+        "id": "determine-reminder-type",
+        "name": "Determine Reminder Type",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [1320, 200]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [{"id": "should-send", "leftValue": "={{ $json.should_send }}", "rightValue": true, "operator": {"type": "boolean", "operation": "equals"}}],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "should-send-reminder",
+        "name": "Should Send?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [1540, 200]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [{"id": "is-friendly", "leftValue": "={{ $json.reminder_type }}", "rightValue": "friendly", "operator": {"type": "string", "operation": "equals"}}],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "switch-reminder-type",
+        "name": "Which Reminder Type?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [1760, 100]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "friendly-to", "name": "email.to", "value": "={{ $('Load Config').item.json.config.testMode ? $('Load Config').item.json.config.ownerNotificationEmail : $('Calculate Date Metrics').item.json.client_email }}", "type": "string"},
+              {"id": "friendly-subject", "name": "email.subject", "value": "={{ ($('Load Config').item.json.config.testMode ? '[TEST] ' : '') + 'Friendly Reminder: Invoice ' + $('Calculate Date Metrics').item.json.invoice_number + ' due ' + $('Calculate Date Metrics').item.json.due_date }}", "type": "string"},
+              {"id": "friendly-body", "name": "email.body", "value": "={{ ($('Load Config').item.json.config.testMode ? '<div style=\"background:#ffcc00;padding:10px;margin-bottom:20px;text-align:center;font-weight:bold;\">TEST MODE</div>' : '') + '<div style=\"font-family:Arial,sans-serif;\"><h2>Friendly Payment Reminder</h2><p>Dear ' + $('Calculate Date Metrics').item.json.client_name + ',</p><p>This is a friendly reminder about invoice ' + $('Calculate Date Metrics').item.json.invoice_number + ' for $' + Number($('Calculate Date Metrics').item.json.balance_due || $('Calculate Date Metrics').item.json.total).toFixed(2) + ' due ' + $('Calculate Date Metrics').item.json.due_date + '.</p>' + ($('Calculate Date Metrics').item.json.invoice_url ? '<p><a href=\"' + $('Calculate Date Metrics').item.json.invoice_url + '\" style=\"background:#4CAF50;color:white;padding:12px 24px;text-decoration:none;border-radius:4px;\">View and Pay Invoice</a></p>' : '') + '<p>If you have already paid, please disregard this reminder.</p></div>' }}", "type": "string"},
+              {"id": "friendly-type", "name": "email.reminder_type", "value": "friendly", "type": "string"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "prepare-friendly-email",
+        "name": "Prepare Friendly Reminder",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [1980, 0]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+            "conditions": [{"id": "is-final", "leftValue": "={{ $json.reminder_type }}", "rightValue": "final_notice", "operator": {"type": "string", "operation": "equals"}}],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "is-final-notice",
+        "name": "Is Final Notice?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [1980, 200]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "pastdue-to", "name": "email.to", "value": "={{ $('Load Config').item.json.config.testMode ? $('Load Config').item.json.config.ownerNotificationEmail : $('Calculate Date Metrics').item.json.client_email }}", "type": "string"},
+              {"id": "pastdue-subject", "name": "email.subject", "value": "={{ ($('Load Config').item.json.config.testMode ? '[TEST] ' : '') + 'Past Due Notice: Invoice ' + $('Calculate Date Metrics').item.json.invoice_number + ' - Payment Required' }}", "type": "string"},
+              {"id": "pastdue-body", "name": "email.body", "value": "={{ ($('Load Config').item.json.config.testMode ? '<div style=\"background:#ffcc00;padding:10px;margin-bottom:20px;text-align:center;font-weight:bold;\">TEST MODE</div>' : '') + '<div style=\"font-family:Arial,sans-serif;\"><div style=\"background:#fff3cd;border-left:4px solid #ffc107;padding:15px;margin-bottom:20px;\"><strong>Payment Past Due</strong></div><p>Dear ' + $('Calculate Date Metrics').item.json.client_name + ',</p><p>Invoice ' + $('Calculate Date Metrics').item.json.invoice_number + ' for $' + Number($('Calculate Date Metrics').item.json.balance_due || $('Calculate Date Metrics').item.json.total).toFixed(2) + ' is now <strong>' + $json.days_overdue + ' days past due</strong>.</p>' + ($('Calculate Date Metrics').item.json.invoice_url ? '<p><a href=\"' + $('Calculate Date Metrics').item.json.invoice_url + '\" style=\"background:#d9534f;color:white;padding:12px 24px;text-decoration:none;border-radius:4px;\">Pay Now</a></p>' : '') + '<p>Please submit payment at your earliest convenience.</p></div>' }}", "type": "string"},
+              {"id": "pastdue-type", "name": "email.reminder_type", "value": "past_due", "type": "string"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "prepare-pastdue-email",
+        "name": "Prepare Past Due Notice",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [2200, 300]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {"id": "final-to", "name": "email.to", "value": "={{ $('Load Config').item.json.config.testMode ? $('Load Config').item.json.config.ownerNotificationEmail : $('Calculate Date Metrics').item.json.client_email }}", "type": "string"},
+              {"id": "final-subject", "name": "email.subject", "value": "={{ ($('Load Config').item.json.config.testMode ? '[TEST] ' : '') + 'FINAL NOTICE: Invoice ' + $('Calculate Date Metrics').item.json.invoice_number + ' - Immediate Payment Required' }}", "type": "string"},
+              {"id": "final-body", "name": "email.body", "value": "={{ ($('Load Config').item.json.config.testMode ? '<div style=\"background:#ffcc00;padding:10px;margin-bottom:20px;text-align:center;font-weight:bold;\">TEST MODE</div>' : '') + '<div style=\"font-family:Arial,sans-serif;\"><div style=\"background:#f8d7da;border-left:4px solid #d9534f;padding:15px;margin-bottom:20px;\"><strong style=\"color:#d9534f;\">FINAL NOTICE - Immediate Action Required</strong></div><p>Dear ' + $('Calculate Date Metrics').item.json.client_name + ',</p><p>Invoice ' + $('Calculate Date Metrics').item.json.invoice_number + ' for $' + Number($('Calculate Date Metrics').item.json.balance_due || $('Calculate Date Metrics').item.json.total).toFixed(2) + ' is <strong>' + $json.days_overdue + ' days past due</strong>.</p><p style=\"background:#f8d7da;padding:15px;\"><strong>This is your final notice.</strong> Failure to pay within 7 days may result in service suspension and collections referral.</p>' + ($('Calculate Date Metrics').item.json.invoice_url ? '<p><a href=\"' + $('Calculate Date Metrics').item.json.invoice_url + '\" style=\"background:#d9534f;color:white;padding:15px 30px;text-decoration:none;border-radius:4px;font-weight:bold;\">PAY NOW</a></p>' : '') + '</div>' }}", "type": "string"},
+              {"id": "final-type", "name": "email.reminder_type", "value": "final_notice", "type": "string"}
+            ]
+          },
+          "options": {"includeBinary": true},
+          "include": "all"
+        },
+        "id": "prepare-final-email",
+        "name": "Prepare Final Notice",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [2200, 100]
+      },
+      {
+        "parameters": {},
+        "id": "merge-emails",
+        "name": "Merge Prepared Emails",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3,
+        "position": [2440, 100]
+      },
+      {
+        "parameters": {
+          "sendTo": "={{ $json.email.to }}",
+          "subject": "={{ $json.email.subject }}",
+          "message": "={{ $json.email.body }}",
+          "options": {
+            "replyTo": "={{ $('Load Config').item.json.config.replyToEmail }}",
+            "senderName": "={{ $('Load Config').item.json.config.fromEmailName }}"
+          }
+        },
+        "id": "send-reminder-email",
+        "name": "Send Reminder Email",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.1,
+        "position": [2660, 100]
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "documentId": {"__rl": true, "mode": "id", "value": "={{ $('Load Config').item.json.config.sheetId }}"},
+          "sheetName": {"__rl": true, "mode": "name", "value": "={{ $('Load Config').item.json.config.sheetTabName }}"},
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "last_reminder_type": "={{ $json.email.reminder_type }}",
+              "last_reminder_ts": "={{ new Date().toISOString() }}",
+              "reminder_count": "={{ ($('Calculate Date Metrics').item.json.calc.reminder_count || 0) + 1 }}"
+            },
+            "matchingColumns": ["dedupe_key"]
+          },
+          "options": {}
+        },
+        "id": "update-reminder-log",
+        "name": "Update Reminder Log in Sheet",
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [2880, 100]
+      }
+    ],
+    "connections": {
+      "Daily at 9 AM": {"main": [[{"node": "Load Config", "type": "main", "index": 0}]]},
+      "Load Config": {"main": [[{"node": "Read All Invoices", "type": "main", "index": 0}]]},
+      "Read All Invoices": {"main": [[{"node": "Filter Unpaid Invoices", "type": "main", "index": 0}]]},
+      "Filter Unpaid Invoices": {"main": [[{"node": "Calculate Date Metrics", "type": "main", "index": 0}]]},
+      "Calculate Date Metrics": {"main": [[{"node": "Can Send Reminder Today?", "type": "main", "index": 0}]]},
+      "Can Send Reminder Today?": {"main": [[{"node": "Determine Reminder Type", "type": "main", "index": 0}], []]},
+      "Determine Reminder Type": {"main": [[{"node": "Should Send?", "type": "main", "index": 0}]]},
+      "Should Send?": {"main": [[{"node": "Which Reminder Type?", "type": "main", "index": 0}], []]},
+      "Which Reminder Type?": {"main": [[{"node": "Prepare Friendly Reminder", "type": "main", "index": 0}], [{"node": "Is Final Notice?", "type": "main", "index": 0}]]},
+      "Prepare Friendly Reminder": {"main": [[{"node": "Merge Prepared Emails", "type": "main", "index": 0}]]},
+      "Is Final Notice?": {"main": [[{"node": "Prepare Final Notice", "type": "main", "index": 0}], [{"node": "Prepare Past Due Notice", "type": "main", "index": 0}]]},
+      "Prepare Final Notice": {"main": [[{"node": "Merge Prepared Emails", "type": "main", "index": 0}]]},
+      "Prepare Past Due Notice": {"main": [[{"node": "Merge Prepared Emails", "type": "main", "index": 0}]]},
+      "Merge Prepared Emails": {"main": [[{"node": "Send Reminder Email", "type": "main", "index": 0}]]},
+      "Send Reminder Email": {"main": [[{"node": "Update Reminder Log in Sheet", "type": "main", "index": 0}]]}
+    },
+    "active": false,
+    "settings": {"executionOrder": "v1", "saveManualExecutions": true},
+    "versionId": "1",
+    "meta": {"instanceId": "invoice-reminder-system-v1"},
+    "tags": [{"name": "billing", "id": "tag-billing"}]
+  }
+]
